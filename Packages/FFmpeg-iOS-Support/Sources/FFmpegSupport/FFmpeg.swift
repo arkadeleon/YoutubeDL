@@ -35,9 +35,48 @@ public func ffprobe(_ args: [String]) -> Int {
     run(tool: HookFFprobe, args: args)
 }
 
+public func ffmpegCapture(_ args: [String]) -> (Int, String?, String?) {
+    runCapture(tool: HookFFmpegCapture, args: args)
+}
+
+public func ffprobeCapture(_ args: [String]) -> (Int, String?, String?) {
+    runCapture(tool: HookFFprobeCapture, args: args)
+}
+
 func run(tool: (Int32, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32, args: [String]) -> Int {
-//    print(#function, args)
-    var argv = args.map { strdup($0) } // FIXME: free
-    let ret = tool(Int32(args.count), &argv)
-    return Int(ret)
+    withArgv(args: args) { argv in
+        Int(tool(Int32(args.count), &argv))
+    }
+}
+
+func runCapture(tool: (Int32, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+                       UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+                       UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32,
+                args: [String]) -> (Int, String?, String?) {
+    withArgv(args: args) { argv in
+        var capturedStdout: UnsafeMutablePointer<CChar>?
+        var capturedStderr: UnsafeMutablePointer<CChar>?
+        let ret = Int(tool(Int32(args.count), &argv, &capturedStdout, &capturedStderr))
+        defer {
+            if let capturedStdout {
+                HookFreeCString(capturedStdout)
+            }
+            if let capturedStderr {
+                HookFreeCString(capturedStderr)
+            }
+        }
+        let stdout = capturedStdout.flatMap { String(validatingUTF8: $0) }
+        let stderr = capturedStderr.flatMap { String(validatingUTF8: $0) }
+        return (ret, stdout, stderr)
+    }
+}
+
+func withArgv<T>(args: [String], _ body: (inout [UnsafeMutablePointer<CChar>?]) -> T) -> T {
+    var argv = args.map { strdup($0) }
+    defer {
+        for pointer in argv {
+            free(pointer)
+        }
+    }
+    return body(&argv)
 }

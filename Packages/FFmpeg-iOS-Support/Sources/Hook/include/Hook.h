@@ -24,4 +24,10 @@ extern int HookFFmpeg(int, char**);
 
 extern int HookFFprobe(int, char**);
 
+extern int HookFFmpegCapture(int, char**, char**, char**);
+
+extern int HookFFprobeCapture(int, char**, char**, char**);
+
+extern void HookFreeCString(char *);
+
 #endif /* Hook_h */

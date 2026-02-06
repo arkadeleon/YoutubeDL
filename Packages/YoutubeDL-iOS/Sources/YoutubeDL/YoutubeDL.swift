@@ -332,42 +332,21 @@ open class YoutubeDL: NSObject {
         print(#function, args)
         let popen = args[0]
         var result = Array<String?>(repeating: nil, count: 2)
-        if var args: [String] = Array(args[1][0]) {
-            // save standard out/error
-            let stdout = dup(STDOUT_FILENO)
-            let stderr = dup(STDERR_FILENO)
-            
-            // redirect standard out/error
-            let outPipe = Pipe()
-            let errPipe = Pipe()
-            dup2(outPipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
-            dup2(errPipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
-            
-            let exitCode = self.handleFFmpeg(args: args)
-            
-            // restore standard out/error
-            dup2(stdout, STDOUT_FILENO)
-            dup2(stderr, STDERR_FILENO)
-            
+        if let args: [String] = Array(args[1][0]) {
+            let (exitCode, stdout, stderr) = self.handleFFmpeg(args: args, captureOutput: true)
             popen.returncode = PythonObject(exitCode)
-            
-            func read(pipe: Pipe) -> String? {
-                guard let string = String(data: pipe.fileHandleForReading.availableData, encoding: .utf8) else {
-                    print(#function, "not UTF-8?")
-                    return nil
-                }
-                print(#function, string)
-                return string
-            }
-            
-            result[0] = read(pipe: outPipe)
-            result[1] = read(pipe: errPipe)
+            result[0] = stdout
+            result[1] = stderr
             return Python.tuple(result)
         }
         return Python.tuple(result)
     }
     
     func handleFFmpeg(args: [String]) -> Int {
+        handleFFmpeg(args: args, captureOutput: false).0
+    }
+
+    func handleFFmpeg(args: [String], captureOutput: Bool) -> (Int, String?, String?) {
         var args = args
         
         let pipe = Pipe()
@@ -436,7 +415,10 @@ open class YoutubeDL: NSObject {
         }
         
 //        print(#function, args)
-        return args[0] == "ffmpeg" ? ffmpeg(args) : ffprobe(args)
+        if captureOutput {
+            return args[0] == "ffmpeg" ? ffmpegCapture(args) : ffprobeCapture(args)
+        }
+        return (args[0] == "ffmpeg" ? ffmpeg(args) : ffprobe(args), nil, nil)
     }
     
     var willTranscode: (() -> ((Double) -> Void)?)?
