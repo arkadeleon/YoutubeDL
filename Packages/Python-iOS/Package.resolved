@@ -1,0 +1,16 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "CSqlite3",
+        "repositoryURL": "https://github.com/alloyapple/CSqlite3.git",
+        "state": {
+          "branch": "master",
+          "revision": "fe433d74268135019da44fc79c853d9253ecc615",
+          "version": null
+        }
+      }
+    ]
+  },
+  "version": 1
+}

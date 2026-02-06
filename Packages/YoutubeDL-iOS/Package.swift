@@ -13,7 +13,7 @@ let package = Package(
     dependencies: [
         .package(path: "../FFmpeg-iOS-Lame"),
         .package(url: "https://github.com/pvieito/PythonKit.git", from: "0.3.1"),
-        .package(url: "https://github.com/kewlbear/Python-iOS.git", from: "0.1.1-b"),
+        .package(path: "../Python-iOS"),
     ],
     targets: [
         .target(
