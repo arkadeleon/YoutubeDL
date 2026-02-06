@@ -3,14 +3,14 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 52;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		35BCEBA52F35D0010027F3AF /* YoutubeDL in Frameworks */ = {isa = PBXBuildFile; productRef = 35BCEBA42F35D0010027F3AF /* YoutubeDL */; };
 		4C0A8EF124D7D0F40071AE7D /* YoutubeDLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0A8EF024D7D0F40071AE7D /* YoutubeDLTests.swift */; };
 		4C185D4C256791C400106D39 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 4C185D4E256791C400106D39 /* Localizable.strings */; };
 		4C1F4CF9272A45760054479F /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C1F4CF8272A45760054479F /* AppModel.swift */; };
-		4C479257255E62B900F7EDE0 /* YoutubeDL in Frameworks */ = {isa = PBXBuildFile; productRef = 4C479256255E62B900F7EDE0 /* YoutubeDL */; };
 		4C581006256B51120034347E /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C581005256B51120034347E /* MainView.swift */; };
 		4CD1DB4124FCC0A7000091B5 /* VideoToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4CD1DB4024FCC0A7000091B5 /* VideoToolbox.framework */; };
 		4CD1DB4324FCC0B7000091B5 /* libiconv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 4CD1DB4224FCC0B7000091B5 /* libiconv.tbd */; };
@@ -111,7 +111,7 @@
 				4CD1DB4324FCC0B7000091B5 /* libiconv.tbd in Frameworks */,
 				4CD1DB4124FCC0A7000091B5 /* VideoToolbox.framework in Frameworks */,
 				600000000000000000000200 /* libsqlite3.tbd in Frameworks */,
-				4C479257255E62B900F7EDE0 /* YoutubeDL in Frameworks */,
+				35BCEBA52F35D0010027F3AF /* YoutubeDL in Frameworks */,
 				600000000000000000000400 /* libz.tbd in Frameworks */,
 				600000000000000000000700 /* CoreFoundation.framework in Frameworks */,
 				600000000000000000000800 /* CoreGraphics.framework in Frameworks */,
@@ -262,7 +262,7 @@
 			);
 			name = YoutubeDL;
 			packageProductDependencies = (
-				4C479256255E62B900F7EDE0 /* YoutubeDL */,
+				35BCEBA42F35D0010027F3AF /* YoutubeDL */,
 			);
 			productName = helloworld;
 			productReference = 610000000000000000100400 /* Y.app */;
@@ -298,7 +298,7 @@
 			);
 			mainGroup = 60796ED919190F4100A9926B;
 			packageReferences = (
-				4C479255255E62B900F7EDE0 /* XCRemoteSwiftPackageReference "YoutubeDL-iOS" */,
+				35BCEBA32F35D0010027F3AF /* XCLocalSwiftPackageReference "Packages/YoutubeDL-iOS" */,
 			);
 			productRefGroup = 60796EE319190F4100A9926B /* Products */;
 			projectDirPath = "";
@@ -660,21 +660,16 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		4C479255255E62B900F7EDE0 /* XCRemoteSwiftPackageReference "YoutubeDL-iOS" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/kewlbear/YoutubeDL-iOS.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.0.3;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		35BCEBA32F35D0010027F3AF /* XCLocalSwiftPackageReference "Packages/YoutubeDL-iOS" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Packages/YoutubeDL-iOS";
 		};
-/* End XCRemoteSwiftPackageReference section */
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		4C479256255E62B900F7EDE0 /* YoutubeDL */ = {
+		35BCEBA42F35D0010027F3AF /* YoutubeDL */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 4C479255255E62B900F7EDE0 /* XCRemoteSwiftPackageReference "YoutubeDL-iOS" */;
 			productName = YoutubeDL;
 		};
 /* End XCSwiftPackageProductDependency section */

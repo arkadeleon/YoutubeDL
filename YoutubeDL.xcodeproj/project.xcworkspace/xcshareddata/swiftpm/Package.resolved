@@ -1,4 +1,5 @@
 {
+  "originHash" : "425da85f8271137d5edac7ed79af287e0fe2a515123119ec0ffd58afd7b04075",
   "pins" : [
     {
       "identity" : "ffmpeg-ios-lame",
@@ -32,19 +33,10 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pvieito/PythonKit.git",
       "state" : {
-        "revision" : "81f621d094a7c8923207efe5178f50dba1b56c39",
-        "version" : "0.3.1"
-      }
-    },
-    {
-      "identity" : "youtubedl-ios",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/kewlbear/YoutubeDL-iOS.git",
-      "state" : {
-        "revision" : "fa41e79d0630b427c6ec698d57c1af20e2ef8ef8",
-        "version" : "0.0.7"
+        "revision" : "6fee7617cfa910fbac7035276e295ba967adbbb4",
+        "version" : "0.5.1"
       }
     }
   ],
-  "version" : 2
+  "version" : 3
 }

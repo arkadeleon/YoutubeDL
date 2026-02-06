@@ -1,0 +1,43 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "FFmpeg-iOS-Lame",
+        "repositoryURL": "https://github.com/kewlbear/FFmpeg-iOS-Lame",
+        "state": {
+          "branch": null,
+          "revision": "c0b202a16a43933cb16bf9914c76e00f0d24d57e",
+          "version": "0.0.6-b20230416-200000"
+        }
+      },
+      {
+        "package": "FFmpeg-iOS-Support",
+        "repositoryURL": "https://github.com/kewlbear/FFmpeg-iOS-Support",
+        "state": {
+          "branch": null,
+          "revision": "60df9313af3a5869255b9654cd88eede4646295b",
+          "version": "0.0.1"
+        }
+      },
+      {
+        "package": "Python-iOS",
+        "repositoryURL": "https://github.com/kewlbear/Python-iOS.git",
+        "state": {
+          "branch": null,
+          "revision": "784b391aa25c765761998cacb2d1fd5c86014164",
+          "version": "0.1.1-b20230312-012746"
+        }
+      },
+      {
+        "package": "PythonKit",
+        "repositoryURL": "https://github.com/pvieito/PythonKit.git",
+        "state": {
+          "branch": null,
+          "revision": "81f621d094a7c8923207efe5178f50dba1b56c39",
+          "version": "0.3.1"
+        }
+      }
+    ]
+  },
+  "version": 1
+}
