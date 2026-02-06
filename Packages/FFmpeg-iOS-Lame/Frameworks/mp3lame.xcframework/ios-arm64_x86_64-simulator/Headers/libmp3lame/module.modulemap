@@ -1,0 +1,4 @@
+module mp3lame {
+    umbrella "."
+    export *
+}
