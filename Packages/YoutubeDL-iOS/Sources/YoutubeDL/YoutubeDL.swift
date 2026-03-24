@@ -335,8 +335,16 @@ open class YoutubeDL: NSObject {
         if let args: [String] = Array(args[1][0]) {
             let (exitCode, stdout, stderr) = self.handleFFmpeg(args: args, captureOutput: true)
             popen.returncode = PythonObject(exitCode)
+            if exitCode != 0, let stderr {
+                print(#function, "ffmpeg stderr:\n\(stderr)")
+            }
             result[0] = stdout
-            result[1] = stderr
+            result[1] = stderr.map { stderr in
+                let filtered = stderr.split(separator: "\n", omittingEmptySubsequences: false)
+                    .filter { !$0.hasPrefix("OSLOG-") }
+                    .joined(separator: "\n")
+                return filtered
+            }
             return Python.tuple(result)
         }
         return Python.tuple(result)
