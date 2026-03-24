@@ -71,9 +71,9 @@ class AppModel: ObservableObject {
         
         $url
             .compactMap { $0 }
-            .sink { url in
-                Task {
-                    await self.startDownload(url: url)
+            .sink { [weak self] url in
+                Task { [weak self] in
+                    await self?.startDownload(url: url)
                 }
             }
             .store(in: &subscriptions)
@@ -98,11 +98,9 @@ class AppModel: ObservableObject {
                 print(#function, "no '_filename'?", info ?? "nil")
                 return
             }
-            if #available(iOS 16.0, *) {
-                outputURL = URL(filePath: path)
-            } else {
-                outputURL = URL(fileURLWithPath: path)
-            }
+            outputURL = URL(fileURLWithPath: path)
+                .deletingPathExtension()
+                .appendingPathExtension("mov")
             
             export(url: outputURL)
             showProgress = false
@@ -186,17 +184,11 @@ class AppModel: ObservableObject {
         var formats = [PythonObject]()
         var error: String?
         
-        let argv: [String] = (
-            url.pathExtension == "mp4"
-            ? ["-o", url.lastPathComponent,]
-            : [
-                "-f", "bestvideo+bestaudio[ext=m4a]/best",
-                "--merge-output-format", "mp4",
-                "--postprocessor-args", "Merger+ffmpeg:-c:v h264",
-                "-o", "%(title).200B.%(ext)s", // https://github.com/yt-dlp/yt-dlp/issues/1136#issuecomment-932077195
-            ]
-        )
-        + [
+        let argv: [String] = [
+            "-f", "bestvideo[vcodec!^=vp9][vcodec!^=av01]+bestaudio/bestvideo+bestaudio/best",
+            "--recode-video", "mov",
+            "--postprocessor-args", "VideoConvertor+ffmpeg:-c:v h264 -c:a aac",
+            "-o", "%(title).200B.%(ext)s", // https://github.com/yt-dlp/yt-dlp/issues/1136#issuecomment-932077195
             "--no-check-certificates",
             url.absoluteString,
         ]

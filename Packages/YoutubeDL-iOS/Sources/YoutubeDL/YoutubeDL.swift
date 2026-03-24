@@ -875,7 +875,7 @@ public func yt_dlp(argv: [String], progress: (([String: PythonObject]) -> Void)?
                     return ([], info)
                 }
                 pythonSelf._downloader.params["postprocessor_args"]
-                    .checking["merger+ffmpeg"]?
+                    .checking["videoconvertor+ffmpeg"]?
                     .extend(["-b:v", "\(vbr)k"])
                 
                 duration = TimeInterval(info["duration"])
