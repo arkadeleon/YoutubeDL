@@ -478,6 +478,7 @@
 		60796F0F19190F4100A9926B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = YoutubeDL/YoutubeDL.entitlements;
 				DEVELOPMENT_TEAM = GG76KD534U;
@@ -512,6 +513,7 @@
 		60796F1019190F4100A9926B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = YoutubeDL/YoutubeDL.entitlements;
 				DEVELOPMENT_TEAM = GG76KD534U;
