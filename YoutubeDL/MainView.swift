@@ -61,8 +61,6 @@ struct MainView: View {
     
     @State var formatsContinuation: FormatsContinuation?
     
-    @State var tasks: ID<[URLSessionDownloadTask]>?
-    
     @AppStorage("isIdleTimerDisabled") var isIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
     
     @State private var showBrowser = false
@@ -192,9 +190,6 @@ struct MainView: View {
             // FIXME: cancel download
         } content: { formats in
             DownloadOptionsView(formats: formats, duration: Int(ceil(app.info!.duration ?? 0)), continuation: formatsContinuation!)
-        }
-        .sheet(item: $tasks) { tasks in
-            TaskList(tasks: tasks.value)
         }
         .sheet(item: $app.webViewURL) { url in
             WebView(url: url) { url in
@@ -780,57 +775,6 @@ extension Format: Identifiable {
 //            .environmentObject(AppModel())
 //    }
 //}
-
-struct TaskList: View {
-    let tasks: [URLSessionDownloadTask]
-    
-    struct TaskGroup: Identifiable {
-        let title: String?
-        
-        let task: URLSessionDownloadTask?
-        
-        let children: [TaskGroup]?
-        
-        var id: String? { task.map { "\($0.taskIdentifier)" } ?? title }
-        
-        var sortKey: Int { task?.taskIdentifier ?? -1 }
-    }
-    
-    @State var groups: [TaskGroup] = []
-    
-    var body: some View {
-        List(groups, children: \.children) { item in
-            if let task = item.task {
-                Text("#\(task.taskIdentifier) \(task.originalRequest?.value(forHTTPHeaderField: "Range") ?? "No range")")
-            } else {
-                Text(item.title ?? "nil")
-            }
-        }
-        .onAppear {
-            let groups = Dictionary(grouping: tasks) { task -> String? in
-                guard let d = task.taskDescription, let index = d.lastIndex(of: "-") else {
-                    return task.taskDescription
-                }
-                return String(d[..<index])
-            }.map { key, value -> TaskGroup in
-                print(key ?? "nil", value.map(\.taskIdentifier))
-                return TaskGroup(title: key, task: nil,
-                          children: Dictionary(grouping: value, by: \.kind).map { key, value -> TaskGroup in
-                    let children = value
-                        .map { TaskGroup(title: nil, task: $0, children: nil) }
-                        .sorted { $0.sortKey < $1.sortKey }
-                    print(key, children.map(\.task?.taskIdentifier))
-                    return TaskGroup(title: key.description, task: nil,
-                                     children: children)
-                })
-            }
-            
-            self.groups = groups
-        }
-    }
-}
-
-extension URLSessionDownloadTask: Identifiable {}
 
 struct Browser: View {
     @State private var address = ""
