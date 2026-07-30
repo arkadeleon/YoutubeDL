@@ -318,6 +318,8 @@ extension Tool {
                         "--prefix=\(installPrefix)",
                         "--disable-frontend",
                         "--disable-shared",
+                        // the mpg123 decoder would link against the host libmpg123
+                        "--disable-decoder",
                     ]
                 }
                 
@@ -766,7 +768,9 @@ func launch(launchPath: String, arguments: [String], currentDirectoryPath: Strin
     }
     
     environment.map { environment in
-        process.environment = environment
+        // merge into the inherited environment so PATH etc. stay intact
+        let merged = ProcessInfo.processInfo.environment.merging(environment) { $1 }
+        process.environment = merged
         print("environment:", environment)
     }
     
