@@ -311,16 +311,6 @@ struct DownloadView: View {
     }
 }
 
-struct SettingsView: View {
-    @Binding var isIdleTimerDisabled: Bool
-
-    var body: some View {
-        List {
-            Toggle("Keep screen turned on", isOn: $isIdleTimerDisabled)
-        }
-    }
-}
-
 extension Array: Identifiable where Element == ([Format], String) {
     public var id: [String] { map(\.0).flatMap { $0.map(\.format_id) } }
 }
