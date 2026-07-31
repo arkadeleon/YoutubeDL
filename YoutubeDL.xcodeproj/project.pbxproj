@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		35067CBB301C6F8900D9996F /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35067CBA301C6F8400D9996F /* SettingsView.swift */; };
+		710000000000000000000001 /* YouTubeCookieStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 710000000000000000000003 /* YouTubeCookieStore.swift */; };
+		710000000000000000000002 /* YouTubeAuthenticationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 710000000000000000000004 /* YouTubeAuthenticationView.swift */; };
 		35BCEBA52F35D0010027F3AF /* YoutubeDL in Frameworks */ = {isa = PBXBuildFile; productRef = 35BCEBA42F35D0010027F3AF /* YoutubeDL */; };
 		4C0A8EF124D7D0F40071AE7D /* YoutubeDLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0A8EF024D7D0F40071AE7D /* YoutubeDLTests.swift */; };
 		4C185D4C256791C400106D39 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 4C185D4E256791C400106D39 /* Localizable.strings */; };
@@ -46,6 +48,8 @@
 
 /* Begin PBXFileReference section */
 		35067CBA301C6F8400D9996F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		710000000000000000000003 /* YouTubeCookieStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeCookieStore.swift; sourceTree = "<group>"; };
+		710000000000000000000004 /* YouTubeAuthenticationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeAuthenticationView.swift; sourceTree = "<group>"; };
 		4C0A8EEE24D7D0F40071AE7D /* YoutubeDLTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YoutubeDLTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4C0A8EF024D7D0F40071AE7D /* YoutubeDLTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YoutubeDLTests.swift; sourceTree = "<group>"; };
 		4C0A8EF224D7D0F40071AE7D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -128,6 +132,8 @@
 				4C581005256B51120034347E /* MainView.swift */,
 				D20000000000000000000005 /* DownloadsView.swift */,
 				35067CBA301C6F8400D9996F /* SettingsView.swift */,
+				710000000000000000000004 /* YouTubeAuthenticationView.swift */,
+				710000000000000000000003 /* YouTubeCookieStore.swift */,
 				4C1F4CF8272A45760054479F /* AppModel.swift */,
 				4C298A61274B641100C75C40 /* YoutubeDL-Bridging-Header.h */,
 			);
@@ -266,6 +272,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				35067CBB301C6F8900D9996F /* SettingsView.swift in Sources */,
+				710000000000000000000002 /* YouTubeAuthenticationView.swift in Sources */,
+				710000000000000000000001 /* YouTubeCookieStore.swift in Sources */,
 				4C581006256B51120034347E /* MainView.swift in Sources */,
 				D10000000000000000000005 /* DownloadsView.swift in Sources */,
 				C784637A244D57EA007CFD0E /* AppDelegate.swift in Sources */,

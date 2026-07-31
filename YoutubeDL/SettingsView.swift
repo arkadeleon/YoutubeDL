@@ -15,6 +15,8 @@ struct SettingsView: View {
     @State private var isLoadingVersion = true
     @State private var isUpdating = false
     @State private var updateRequest = 0
+    @State private var isShowingYouTubeSignIn = false
+    @State private var alertTitle = ""
     @State private var alertMessage = ""
     @State private var isShowingAlert = false
 
@@ -48,6 +50,23 @@ struct SettingsView: View {
                 }
                 .disabled(isLoadingVersion || isUpdating)
             }
+
+            Section("YouTube Authentication") {
+                Button {
+                    isShowingYouTubeSignIn = true
+                } label: {
+                    Label("Sign In and Save YouTube Cookies", systemImage: "person.crop.circle.badge.checkmark")
+                }
+
+                if app.hasYouTubeCookies {
+                    Button {
+                        removeCookies()
+                    } label: {
+                        Label("Remove YouTube Cookies", systemImage: "trash.circle")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
         }
         .task {
             await loadVersion()
@@ -58,7 +77,13 @@ struct SettingsView: View {
             }
             await updateYtDlp()
         }
-        .alert("yt-dlp", isPresented: $isShowingAlert) {
+        .sheet(isPresented: $isShowingYouTubeSignIn) {
+            NavigationView {
+                YouTubeAuthenticationView()
+            }
+            .environmentObject(app)
+        }
+        .alert(alertTitle, isPresented: $isShowingAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(alertMessage)
@@ -91,6 +116,7 @@ struct SettingsView: View {
 
         do {
             try await YoutubeDL.downloadPythonModule()
+            alertTitle = "yt-dlp"
             alertMessage = String(
                 localized: "yt-dlp was updated. Restart the app to use the latest version."
             )
@@ -98,10 +124,21 @@ struct SettingsView: View {
         } catch is CancellationError {
             return
         } catch {
+            alertTitle = "yt-dlp"
             alertMessage = String(
                 format: String(localized: "Could not update yt-dlp: %@"),
                 error.localizedDescription
             )
+            isShowingAlert = true
+        }
+    }
+
+    private func removeCookies() {
+        do {
+            try app.removeYouTubeCookies()
+        } catch {
+            alertTitle = "Cookie operation failed"
+            alertMessage = error.localizedDescription
             isShowingAlert = true
         }
     }

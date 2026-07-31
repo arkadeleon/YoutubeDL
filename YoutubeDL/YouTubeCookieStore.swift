@@ -1,0 +1,186 @@
+//
+//  YouTubeCookieStore.swift
+//  YoutubeDL
+//
+
+import Foundation
+
+enum YouTubeCookieStore {
+    enum StoreError: LocalizedError {
+        case invalidEncoding
+        case noYouTubeCookies
+        case noAuthenticationCookies
+        case invalidCookie
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidEncoding:
+                return "The cookie file is not valid UTF-8 text."
+            case .noYouTubeCookies:
+                return "No YouTube cookies were found."
+            case .noAuthenticationCookies:
+                return "No authenticated YouTube session was found. Sign in to YouTube before saving cookies."
+            case .invalidCookie:
+                return "The cookie file contains an invalid cookie entry."
+            }
+        }
+    }
+
+    private struct CookieRecord {
+        let domain: String
+        let includesSubdomains: Bool
+        let path: String
+        let isSecure: Bool
+        let expiration: Int64
+        let name: String
+        let value: String
+
+        var isYouTubeCookie: Bool {
+            let normalizedDomain = domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            return normalizedDomain == "youtube.com" || normalizedDomain.hasSuffix(".youtube.com")
+        }
+
+        var isAuthenticationCookie: Bool {
+            authenticationCookieNames.contains(name)
+        }
+
+        var isExpired: Bool {
+            expiration != 0 && expiration <= Int64(Date().timeIntervalSince1970)
+        }
+
+        var netscapeLine: String {
+            [
+                domain,
+                includesSubdomains ? "TRUE" : "FALSE",
+                path,
+                isSecure ? "TRUE" : "FALSE",
+                String(expiration),
+                name,
+                value,
+            ].joined(separator: "\t")
+        }
+
+        init(cookie: HTTPCookie) throws {
+            guard !cookie.name.isEmpty,
+                  !cookie.domain.isEmpty,
+                  !cookie.name.containsCookieDelimiter,
+                  !cookie.value.containsCookieDelimiter else {
+                throw StoreError.invalidCookie
+            }
+
+            domain = cookie.domain
+            includesSubdomains = cookie.domain.hasPrefix(".")
+            path = cookie.path.isEmpty ? "/" : cookie.path
+            isSecure = cookie.isSecure
+            expiration = cookie.expiresDate.map { Int64($0.timeIntervalSince1970) } ?? 0
+            name = cookie.name
+            value = cookie.value
+        }
+    }
+
+    private static let authenticationCookieNames: Set<String> = [
+        "APISID",
+        "HSID",
+        "LOGIN_INFO",
+        "SAPISID",
+        "SID",
+        "SSID",
+        "__Secure-1PAPISID",
+        "__Secure-1PSID",
+        "__Secure-3PAPISID",
+        "__Secure-3PSID",
+    ]
+
+    static var existingFileURL: URL? {
+        guard let url = try? cookieFileURL(), FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        return url
+    }
+
+    static var hasStoredCookies: Bool {
+        existingFileURL != nil
+    }
+
+    static func save(cookies: [HTTPCookie]) throws {
+        let records = try cookies
+            .map(CookieRecord.init(cookie:))
+            .filter { $0.isYouTubeCookie && !$0.isExpired }
+        try save(records: records)
+    }
+
+    static func removeCookies() throws {
+        guard let url = existingFileURL else {
+            return
+        }
+        try FileManager.default.removeItem(at: url)
+    }
+
+    static func netscapeData(from cookies: [HTTPCookie]) throws -> Data {
+        let records = try cookies
+            .map(CookieRecord.init(cookie:))
+            .filter { $0.isYouTubeCookie && !$0.isExpired }
+        return try netscapeData(from: records)
+    }
+
+    private static func save(records: [CookieRecord]) throws {
+        let data = try netscapeData(from: records)
+        let url = try cookieFileURL()
+        try data.write(to: url, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: url.path
+        )
+
+        var resourceValues = URLResourceValues()
+        resourceValues.isExcludedFromBackup = true
+        var mutableURL = url
+        try mutableURL.setResourceValues(resourceValues)
+    }
+
+    private static func netscapeData(from records: [CookieRecord]) throws -> Data {
+        guard !records.isEmpty else {
+            throw StoreError.noYouTubeCookies
+        }
+        guard records.contains(where: { $0.isAuthenticationCookie }) else {
+            throw StoreError.noAuthenticationCookies
+        }
+
+        let body = records
+            .sorted { ($0.domain, $0.name) < ($1.domain, $1.name) }
+            .map(\.netscapeLine)
+            .joined(separator: "\n")
+        let contents = """
+        # Netscape HTTP Cookie File
+        # Generated by YoutubeDL. Keep this file private.
+        \(body)
+
+        """
+        guard let data = contents.data(using: .utf8) else {
+            throw StoreError.invalidEncoding
+        }
+        return data
+    }
+
+    private static func cookieFileURL() throws -> URL {
+        let applicationSupport = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let directory = applicationSupport.appendingPathComponent("YoutubeDL", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        return directory.appendingPathComponent("youtube-cookies.txt")
+    }
+}
+
+private extension String {
+    var containsCookieDelimiter: Bool {
+        contains("\t") || contains("\n") || contains("\r")
+    }
+}

@@ -64,6 +64,8 @@ class AppModel: ObservableObject {
 
     @Published var webViewURL: URL?
 
+    @Published var hasYouTubeCookies = YouTubeCookieStore.hasStoredCookies
+
     var formatSelector: YoutubeDL.FormatSelector?
 
     lazy var subscriptions = Set<AnyCancellable>()
@@ -255,14 +257,17 @@ class AppModel: ObservableObject {
         var formats = [PythonObject]()
         var error: String?
 
-        let argv: [String] = [
+        var argv: [String] = [
             "-f", "bestvideo[vcodec!^=vp9][vcodec!^=av01]+bestaudio/bestvideo+bestaudio/best",
             "--recode-video", "mov",
             "--postprocessor-args", "VideoConvertor+ffmpeg:-c:v h264 -c:a aac",
             "-o", "%(title).200B.%(ext)s", // https://github.com/yt-dlp/yt-dlp/issues/1136#issuecomment-932077195
             "--no-check-certificates",
-            url.absoluteString,
         ]
+        if let cookieFileURL = YouTubeCookieStore.existingFileURL {
+            argv.append(contentsOf: ["--cookies", cookieFileURL.path])
+        }
+        argv.append(url.absoluteString)
         print(#function, argv)
         try await yt_dlp(argv: argv) { dict in
             info = dict["info_dict"]
@@ -328,6 +333,16 @@ class AppModel: ObservableObject {
         }
 
         return (info, files, formats)
+    }
+
+    func saveYouTubeCookies(_ cookies: [HTTPCookie]) throws {
+        try YouTubeCookieStore.save(cookies: cookies)
+        hasYouTubeCookies = true
+    }
+
+    func removeYouTubeCookies() throws {
+        try YouTubeCookieStore.removeCookies()
+        hasYouTubeCookies = false
     }
 
     func transcode(videoURL: URL, transcodedURL: URL, timeRange: TimeRange?, bitRate: Double?) async throws {
