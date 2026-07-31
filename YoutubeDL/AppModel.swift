@@ -31,44 +31,46 @@ import UIKit
 import AVFoundation
 import Photos
 import PythonKit
+import QuickLookThumbnailing
+import UniformTypeIdentifiers
 
 @MainActor
 class AppModel: ObservableObject {
     @Published var url: URL?
-    
+
     @Published var youtubeDL = YoutubeDL()
-    
+
     @Published var enableChunkedDownload = true
-    
+
     @Published var enableTranscoding = true
-    
+
     @Published var supportedFormatsOnly = true
-    
+
     @Published var exportToPhotos = true
-    
+
     @Published var fileURL: URL?
-    
-    @Published var downloads: [URL] = []
-    
+
+    @Published var downloads: [DownloadedFile] = []
+
     @Published var showProgress = false
-    
+
     var progress = Progress()
-    
+
     @Published var error: Error?
-    
+
     @Published var exception: PythonObject?
-    
+
     @Published var info: Info?
-    
+
     @Published var webViewURL: URL?
-    
+
     var formatSelector: YoutubeDL.FormatSelector?
-    
+
     lazy var subscriptions = Set<AnyCancellable>()
-    
+
     init() {
         youtubeDL.downloadsDirectory = try! documentsDirectory()
-        
+
         $url
             .compactMap { $0 }
             .sink { [weak self] url in
@@ -77,23 +79,23 @@ class AppModel: ObservableObject {
                 }
             }
             .store(in: &subscriptions)
-        
+
         do {
-            downloads = try loadDownloads()
+            try refreshDownloads()
         } catch {
             // FIXME: ...
             print(#function, error)
         }
     }
-    
+
     func startDownload(url: URL) async {
         print(#function, url)
-        
+
         do {
             let (info, files, infos) = try await download(url: url)
-            
+
             let outputURL: URL
-            
+
             guard let path = info.flatMap({ String($0["_filename"]) }) else {
                 print(#function, "no '_filename'?", info ?? "nil")
                 return
@@ -101,7 +103,7 @@ class AppModel: ObservableObject {
             outputURL = URL(fileURLWithPath: path)
                 .deletingPathExtension()
                 .appendingPathExtension("mov")
-            
+
             export(url: outputURL)
             showProgress = false
             notify(body: "Finished")
@@ -120,60 +122,129 @@ class AppModel: ObservableObject {
                 }
                 return
             }
-            
+
             await MainActor.run {
                 self.error = error
             }
         }
     }
-    
+
     func save(info: Info) throws -> URL {
         let title = info.safeTitle
         let fileManager = FileManager.default
         var url = URL(fileURLWithPath: title, relativeTo: try documentsDirectory())
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
-        
+
         // exclude from iCloud backup
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         try url.setResourceValues(values)
-        
+
         let data = try JSONEncoder().encode(info)
         try data.write(to: url.appendingPathComponent("Info.json"))
-        
+
         return url
     }
-    
-    func loadDownloads() throws -> [URL] {
-        let keys: Set<URLResourceKey> = [.nameKey, .isDirectoryKey]
+
+    func refreshDownloads() throws {
+        let fileManager = FileManager.default
         let documents = try documentsDirectory()
-        guard let enumerator = FileManager.default.enumerator(at: documents, includingPropertiesForKeys: Array(keys), options: .skipsHiddenFiles) else { fatalError() }
-        var urls = [URL]()
-        for case let url as URL in enumerator {
+        let keys: Set<URLResourceKey> = [
+            .contentModificationDateKey,
+            .fileSizeKey,
+            .isRegularFileKey,
+        ]
+
+        let urls = try fileManager.contentsOfDirectory(
+            at: documents,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        )
+
+        var files: [(file: DownloadedFile, modificationDate: Date?)] = []
+        for url in urls {
             let values = try url.resourceValues(forKeys: keys)
-            guard enumerator.level == 2, url.lastPathComponent == "Info.json" else { continue }
-            print(enumerator.level, url.path.replacingOccurrences(of: documents.path, with: ""), values.isDirectory ?? false ? "dir" : "file")
-            urls.append(url.deletingLastPathComponent())
+            guard values.isRegularFile == true else {
+                continue
+            }
+
+            let file = DownloadedFile(
+                url: url,
+                byteCount: Int64(values.fileSize ?? 0)
+            )
+            files.append((file, values.contentModificationDate))
         }
-        return urls
+
+        downloads = files
+            .sorted { ($0.modificationDate ?? .distantPast) > ($1.modificationDate ?? .distantPast) }
+            .map(\.file)
     }
-    
+
+    func delete(_ file: DownloadedFile) throws {
+        try FileManager.default.removeItem(at: file.url)
+        try refreshDownloads()
+    }
+
+    func loadThumbnail(for file: DownloadedFile, size: CGSize, scale: CGFloat) async -> UIImage? {
+        let request = QLThumbnailGenerator.Request(
+            fileAt: file.url,
+            size: size,
+            scale: scale,
+            representationTypes: .thumbnail
+        )
+
+        do {
+            let representation = try await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)
+            guard !Task.isCancelled else {
+                return nil
+            }
+            return representation.uiImage
+        } catch is CancellationError {
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    func loadDuration(for file: DownloadedFile) async -> String? {
+        guard let type = UTType(filenameExtension: file.url.pathExtension),
+              type.conforms(to: .movie) else {
+            return nil
+        }
+
+        do {
+            let duration = try await AVURLAsset(url: file.url).load(.duration)
+            try Task.checkCancellation()
+
+            let seconds = duration.seconds
+            guard seconds.isFinite, seconds > 0 else { return nil }
+
+            let formatter = DateComponentsFormatter()
+            formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute, .second] : [.minute, .second]
+            formatter.unitsStyle = .positional
+            formatter.zeroFormattingBehavior = .pad
+            return formatter.string(from: seconds)
+        } catch {
+            return nil
+        }
+    }
+
     func documentsDirectory() throws -> URL {
         try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
     }
-    
+
     func pauseDownload() {
-        
+
     }
-    
+
     func resumeDownload() {
-        
+
     }
-    
+
     func cancelDownload() {
-        
+
     }
-    
+
     func download(url: URL) async throws -> (PythonObject?, [String], [PythonObject]) {
         progress.localizedDescription = NSLocalizedString("Extracting info", comment: "progress description")
 
@@ -183,7 +254,7 @@ class AppModel: ObservableObject {
         var files = [String]()
         var formats = [PythonObject]()
         var error: String?
-        
+
         let argv: [String] = [
             "-f", "bestvideo[vcodec!^=vp9][vcodec!^=av01]+bestaudio/bestvideo+bestaudio/best",
             "--recode-video", "mov",
@@ -200,11 +271,11 @@ class AppModel: ObservableObject {
 //                    self.info = try? PythonDecoder().decode(Info.self, from: info!)
 //                }
 //            }
-            
+
             let status = String(dict["status"]!)
-            
+
             self.progress.localizedDescription = nil
-            
+
             switch status {
             case "downloading":
                 self.progress.kind = .file
@@ -227,7 +298,7 @@ class AppModel: ObservableObject {
             }
         } log: { level, message in
             print(#function, level, message)
-            
+
             if level == "error" || message.hasSuffix("has already been downloaded") {
                 error = message
             }
@@ -236,48 +307,48 @@ class AppModel: ObservableObject {
             self.progress.localizedDescription = NSLocalizedString("Transcoding...", comment: "Progress description")
             self.progress.completedUnitCount = 0
             self.progress.totalUnitCount = 100
-            
+
             let t0 = ProcessInfo.processInfo.systemUptime
-            
+
             return { (progress: Double) in
                 print(#function, "transcode:", progress)
                 let elapsed = ProcessInfo.processInfo.systemUptime - t0
                 let speed = progress / elapsed
                 let ETA = (1 - progress) / speed
-                
+
                 guard ETA.isFinite else { return }
-                
+
                 self.progress.completedUnitCount = Int64(progress * 100)
                 self.progress.estimatedTimeRemaining = ETA
             }
         }
-        
+
         if let error {
             throw NSError(domain: "App", code: 1, userInfo: [NSLocalizedDescriptionKey: error])
         }
-        
+
         return (info, files, formats)
     }
-    
+
     func transcode(videoURL: URL, transcodedURL: URL, timeRange: TimeRange?, bitRate: Double?) async throws {
         progress.kind = nil
         progress.localizedDescription = NSLocalizedString("Transcoding...", comment: "Progress description")
         progress.totalUnitCount = 100
-        
+
         let t0 = ProcessInfo.processInfo.systemUptime
-        
+
         let transcoder = Transcoder { progress in
             print(#function, "transcode:", progress)
             let elapsed = ProcessInfo.processInfo.systemUptime - t0
             let speed = progress / elapsed
             let ETA = (1 - progress) / speed
-            
+
             guard ETA.isFinite else { return }
-            
+
             self.progress.completedUnitCount = Int64(progress * 100)
             self.progress.estimatedTimeRemaining = ETA
         }
-       
+
         let _: Int = try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 do {
@@ -289,13 +360,13 @@ class AppModel: ObservableObject {
             }
         }
     }
-    
+
     func mux(video videoURL: URL, audio audioURL: URL, out outputURL: URL, timeRange: TimeRange?) async throws -> Bool {
         let t0 = ProcessInfo.processInfo.systemUptime
-       
+
         let videoAsset = AVAsset(url: videoURL)
         let audioAsset = AVAsset(url: audioURL)
-        
+
         guard let videoAssetTrack = videoAsset.tracks(withMediaType: .video).first,
               let audioAssetTrack = audioAsset.tracks(withMediaType: .audio).first else {
             print(#function,
@@ -303,11 +374,11 @@ class AppModel: ObservableObject {
                   audioAsset.tracks(withMediaType: .audio))
             return false
         }
-        
+
         let composition = AVMutableComposition()
         let videoCompositionTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         let audioCompositionTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-        
+
         do {
             try videoCompositionTrack?.insertTimeRange(CMTimeRange(start: .zero, duration: videoAssetTrack.timeRange.duration), of: videoAssetTrack, at: .zero)
             let range: CMTimeRange
@@ -324,18 +395,18 @@ class AppModel: ObservableObject {
             print(#function, error)
             return false
         }
-        
+
         guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
             print(#function, "unable to init export session")
             return false
         }
-        
+
         removeItem(at: outputURL)
-        
+
         session.outputURL = outputURL
         session.outputFileType = .mp4
         print(#function, "merging...")
-        
+
         DispatchQueue.main.async {
             let progress = self.progress
             progress.kind = nil
@@ -345,7 +416,7 @@ class AppModel: ObservableObject {
             progress.completedUnitCount = 0
             progress.estimatedTimeRemaining = nil
         }
-        
+
         Task {
             while session.status != .completed {
                 print(#function, session.progress)
@@ -353,7 +424,7 @@ class AppModel: ObservableObject {
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
         }
-        
+
         return try await withCheckedThrowingContinuation { continuation in
             session.exportAsynchronously {
                 print(#function, "finished merge", session.status.rawValue)
@@ -366,7 +437,7 @@ class AppModel: ObservableObject {
                 } else {
                     print(#function, session.error ?? "no error?")
                 }
-                
+
                 continuation.resume(with: Result {
                     if let error = session.error { throw error }
                     return true
@@ -374,7 +445,7 @@ class AppModel: ObservableObject {
             }
         }
     }
-  
+
     func export(url: URL) {
         PHPhotoLibrary.shared().performChanges({
             _ = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
@@ -385,8 +456,38 @@ class AppModel: ObservableObject {
             }
         }
     }
-    
+
     func share() {
-        
+
+    }
+}
+
+struct DownloadedFile: Identifiable {
+    let url: URL
+    let byteCount: Int64
+
+    var id: URL {
+        url
+    }
+
+    var name: String {
+        url.lastPathComponent
+    }
+
+    var iconName: String {
+        guard let type = UTType(filenameExtension: url.pathExtension) else {
+            return "doc"
+        }
+
+        if type.conforms(to: .movie) {
+            return "film"
+        }
+        if type.conforms(to: .audio) {
+            return "waveform"
+        }
+        if type.conforms(to: .image) {
+            return "photo"
+        }
+        return "doc"
     }
 }

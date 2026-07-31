@@ -44,6 +44,15 @@ struct MainView: View {
             }
 
             NavigationView {
+                DownloadsView()
+                    .navigationTitle("Downloads")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .tabItem {
+                Label("Downloads", systemImage: "folder.circle")
+            }
+
+            NavigationView {
                 SettingsView(isIdleTimerDisabled: $isIdleTimerDisabled)
                     .navigationTitle("Settings")
                     .navigationBarTitleDisplayMode(.inline)

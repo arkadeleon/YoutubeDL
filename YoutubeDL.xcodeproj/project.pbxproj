@@ -17,6 +17,7 @@
 		600000000000000000100200 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 610000000000000000100800 /* Images.xcassets */; };
 		C7681278241B4F2F00EA5FD8 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = C7681277241B4F2F00EA5FD8 /* LaunchScreen.storyboard */; };
 		C784637A244D57EA007CFD0E /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7846379244D57EA007CFD0E /* AppDelegate.swift */; };
+		D10000000000000000000005 /* DownloadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000005 /* DownloadsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 		C7681277241B4F2F00EA5FD8 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		C768128E241B68C000EA5FD8 /* YoutubeDL.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = YoutubeDL.entitlements; sourceTree = "<group>"; };
 		C7846379244D57EA007CFD0E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		D20000000000000000000005 /* DownloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,6 +124,7 @@
 				4CD611F22730D76300AB34C8 /* Main.storyboard */,
 				C7681277241B4F2F00EA5FD8 /* LaunchScreen.storyboard */,
 				4C581005256B51120034347E /* MainView.swift */,
+				D20000000000000000000005 /* DownloadsView.swift */,
 				4C1F4CF8272A45760054479F /* AppModel.swift */,
 				4C298A61274B641100C75C40 /* YoutubeDL-Bridging-Header.h */,
 			);
@@ -260,6 +263,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4C581006256B51120034347E /* MainView.swift in Sources */,
+				D10000000000000000000005 /* DownloadsView.swift in Sources */,
 				C784637A244D57EA007CFD0E /* AppDelegate.swift in Sources */,
 				4C1F4CF9272A45760054479F /* AppModel.swift in Sources */,
 			);
