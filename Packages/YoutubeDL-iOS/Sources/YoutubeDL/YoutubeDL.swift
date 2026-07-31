@@ -197,6 +197,13 @@ open class YoutubeDL: NSObject {
         return directory.appendingPathComponent("yt_dlp")
     }()
     
+    /// yt-dlp caches under `~/.cache`, but on iOS `~` is the container root and is
+    /// not writable, so point it at the caches directory instead.
+    public static var cacheDirectoryURL: URL = {
+        guard let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { fatalError() }
+        return directory
+    }()
+    
     open var transcoder: Transcoder?
     
     public var version: String?
@@ -279,6 +286,9 @@ open class YoutubeDL: NSObject {
             try await Self.downloadPythonModule()
         }
         
+        let os = try Python.attemptImport("os")
+        os.environ["XDG_CACHE_HOME"] = PythonObject(Self.cacheDirectoryURL.path)
+        
         let sys = try Python.attemptImport("sys")
         if !(Array(sys.path) ?? []).contains(Self.pythonModuleURL.path) {
             injectFakePopen(handler: popenHandler)
@@ -287,6 +297,7 @@ open class YoutubeDL: NSObject {
         }
         
         let pythonModule = try Python.attemptImport("yt_dlp")
+        registerJavaScriptCoreJsChallengeProvider()
         version = String(pythonModule.version.__version__)
         return pythonModule
     }
