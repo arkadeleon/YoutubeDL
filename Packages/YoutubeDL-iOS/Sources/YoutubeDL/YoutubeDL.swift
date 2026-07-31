@@ -291,6 +291,11 @@ open class YoutubeDL: NSObject {
         return pythonModule
     }
     
+    public func loadVersion() async throws -> String? {
+        _ = try await loadPythonModule()
+        return version
+    }
+    
     func injectFakePopen(handler: PythonFunction) {
         runSimpleString("""
             import errno

@@ -167,8 +167,6 @@ struct DownloadView: View {
             if app.showProgress {
                 ProgressView(app.progress)
             }
-
-            app.youtubeDL.version.map { Text("yt-dlp version \($0)") }
         }
         .onAppear(perform: {
             app.formatSelector = { info in
