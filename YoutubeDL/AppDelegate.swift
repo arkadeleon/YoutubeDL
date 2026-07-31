@@ -47,9 +47,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         
         UNUserNotificationCenter.current().delegate = self
         
-        let view = NavigationView {
-            MainView()
-        }
+        let view = MainView()
             .environmentObject(model)
         window?.rootViewController = UIHostingController(rootView: view)
         

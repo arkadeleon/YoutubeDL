@@ -29,12 +29,43 @@ import PythonKit
 import FFmpegSupport
 import AVFoundation
 
-@available(iOS 13.0.0, *)
 struct MainView: View {
+    @AppStorage("isIdleTimerDisabled") private var isIdleTimerDisabled = false
+
+    var body: some View {
+        TabView {
+            NavigationView {
+                DownloadView()
+                    .navigationTitle("Download")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .tabItem {
+                Label("Download", systemImage: "arrow.down.circle")
+            }
+
+            NavigationView {
+                SettingsView(isIdleTimerDisabled: $isIdleTimerDisabled)
+                    .navigationTitle("Settings")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .tabItem {
+                Label("Settings", systemImage: "gear.circle")
+            }
+        }
+        .onAppear {
+            UIApplication.shared.isIdleTimerDisabled = isIdleTimerDisabled
+        }
+        .onChange(of: isIdleTimerDisabled) { newValue in
+            UIApplication.shared.isIdleTimerDisabled = newValue
+        }
+    }
+}
+
+struct DownloadView: View {
     @State var alertMessage: String?
-    
+
     @State var isShowingAlert = false
-    
+
     @State var error: Error? {
         didSet {
             guard error != nil else { return }
@@ -42,35 +73,29 @@ struct MainView: View {
             isShowingAlert = true
         }
     }
-    
+
     @EnvironmentObject var app: AppModel
-    
+
     @State var indeterminateProgressKey: String?
-    
+
     @State var isTranscodingEnabled = true
-    
+
     @State var isRemuxingEnabled = true
-    
+
     @State var urlString = ""
-    
+
     @State var isExpanded = false
-    
+
     @State var expandOptions = true
-    
+
     @State var formats: ([([Format], String)])?
-    
+
     @State var formatsContinuation: FormatsContinuation?
-    
-    @AppStorage("isIdleTimerDisabled") var isIdleTimerDisabled = UIApplication.shared.isIdleTimerDisabled
-    
+
     @State private var showBrowser = false
-    
+
     var body: some View {
         List {
-            Section {
-                Toggle("Keep screen turned on", isOn: $isIdleTimerDisabled)
-            }
-            
             Section {
                 DisclosureGroup(isExpanded: $isExpanded) {
                     Button("Paste URL") {
@@ -109,17 +134,17 @@ struct MainView: View {
                     }
                 }
             }
-            
+
 //            if let key = indeterminateProgressKey {
 //                ProgressView(key)
 //                    .frame(maxWidth: .infinity)
 //            }
-            
+
             if let info = app.info {
                 Section {
                     Text(info.title)
                 }
-                
+
 //                Section {
 //                    DisclosureGroup("Options", isExpanded: $expandOptions) {
 //                        Toggle("Fast Download", isOn: $app.enableChunkedDownload)
@@ -129,34 +154,32 @@ struct MainView: View {
 //                    }
 //                }
             }
-           
+
             if app.showProgress {
                 ProgressView(app.progress)
             }
-            
+
             app.youtubeDL.version.map { Text("yt-dlp version \($0)") }
         }
         .onAppear(perform: {
             app.formatSelector = { info in
                 indeterminateProgressKey = nil
                 app.info = info
-                
+
                 let (formats, timeRange): ([Format], TimeRange?) = await withCheckedContinuation { continuation in
                     self.formatsContinuation = continuation
                     self.formats = [([], "Transcode")]
                 }
-                
+
                 var url: URL?
                 if !formats.isEmpty {
                     url = save(info: info)
                 }
-                
+
                 app.showProgress = true
-                
+
                 return (formats, url, timeRange, formats.first?.vbr, "")
             }
-            
-            UIApplication.shared.isIdleTimerDisabled = isIdleTimerDisabled
         })
         .onChange(of: app.url) { newValue in
             guard let url = newValue else { return }
@@ -165,9 +188,6 @@ struct MainView: View {
             indeterminateProgressKey = "Extracting info"
             guard isExpanded else { return }
             isExpanded = false
-        }
-        .onChange(of: isIdleTimerDisabled) { newValue in
-            UIApplication.shared.isIdleTimerDisabled = newValue
         }
         .onReceive(app.$error) {
             error = $0
@@ -187,7 +207,7 @@ struct MainView: View {
         .sheet(item: $app.webViewURL) { url in
             WebView(url: url) { url in
                 app.webViewURL = nil
-                
+
                 Task {
                     await app.startDownload(url: url)
                 }
@@ -204,7 +224,7 @@ struct MainView: View {
             }
         }
     }
-    
+
     func open(url: URL) {
         UIApplication.shared.open(url, options: [:]) {
             if !$0 {
@@ -212,20 +232,20 @@ struct MainView: View {
             }
         }
     }
-   
+
     func alert(message: String) {
         alertMessage = message
         isShowingAlert = true
     }
-    
+
     func check(info: Info?, continuation: FormatsContinuation) {
         guard let formats = info?.formats else {
             continuation.resume(returning: ([], nil))
             return
         }
-        
+
         formatsContinuation = continuation
-        
+
         let _bestAudio = formats.filter { $0.isAudioOnly && $0.ext == "m4a" }.last
         let _bestVideo = formats.filter {
             $0.isVideoOnly && (isTranscodingEnabled || !$0.isTranscodingNeeded) }.last
@@ -270,7 +290,7 @@ struct MainView: View {
                     bestVideoHeight)),
         ]
     }
-    
+
     func save(info: Info) -> URL? {
         do {
             return try app.save(info: info)
@@ -282,14 +302,18 @@ struct MainView: View {
     }
 }
 
-extension Array: Identifiable where Element == ([Format], String) {
-    public var id: [String] { map(\.0).flatMap { $0.map(\.format_id) } }
+struct SettingsView: View {
+    @Binding var isIdleTimerDisabled: Bool
+
+    var body: some View {
+        List {
+            Toggle("Keep screen turned on", isOn: $isIdleTimerDisabled)
+        }
+    }
 }
 
-// FIXME: rename?
-struct ID<Value>: Identifiable {
-    let value: Value
-    let id = UUID()
+extension Array: Identifiable where Element == ([Format], String) {
+    public var id: [String] { map(\.0).flatMap { $0.map(\.format_id) } }
 }
 
 typealias TimeRange = Range<TimeInterval>
@@ -298,25 +322,25 @@ typealias FormatsContinuation = CheckedContinuation<([Format], TimeRange?), Neve
 
 struct DownloadOptionsView: View {
     let formats: [([Format], String)]
-    
+
     let duration: Int
-    
+
     let continuation: FormatsContinuation
-    
+
     @AppStorage(wrappedValue: true, "cut") var cut: Bool
-    
+
     @State var start = "0"
     @State var end: String
     @State var length: String
-    
+
     enum Fields: Hashable {
         case start, end, length
     }
-    
+
     @FocusState var focus: Fields?
-    
+
     @Environment(\.dismiss) var dismiss
-    
+
     var body: some View {
         Form {
             ForEach(formats, id: \.1) { format in
@@ -329,13 +353,13 @@ struct DownloadOptionsView: View {
                     }
                     let timeRange = (duration > 0 && cut) ? TimeInterval(s)..<TimeInterval(e) : nil
                     continuation.resume(returning: (format.0, timeRange))
-                    
+
                     dismiss()
                 } label: {
                     Text(format.1)
                 }
             }
-            
+
             Section {
                 HStack {
                     TextField("Start", text: $start)
@@ -371,13 +395,13 @@ struct DownloadOptionsView: View {
             updateEnd(start: start, length: length)
         }
     }
-    
+
     init(formats: [([Format], String)], duration: Int, continuation: FormatsContinuation) {
         self.formats = formats
         self.duration = duration
-        
+
         self.continuation = continuation
-        
+
         let string = format(duration) ?? ""
         _end = State(initialValue: string)
         _length = State(initialValue: string)
@@ -390,7 +414,7 @@ struct DownloadOptionsView: View {
         let l = e - s
         length = format(l) ?? length
     }
-    
+
     func updateEnd(start: String, length: String) {
         guard let s = seconds(start), let l = seconds(length) else {
             return
@@ -410,7 +434,7 @@ func seconds(_ string: String) -> Int? {
         print(#function, "too many components:", string)
         return nil
     }
-    
+
     var seconds = 0
     for component in components {
         guard let number = Int(component) else {
@@ -442,38 +466,38 @@ let handlerName = "YoutubeDL"
 
 struct WebView: UIViewRepresentable {
     let url: URL?
-    
+
     let handler: ((URL) -> Void)?
-    
+
     func makeUIView(context: Context) -> WKWebView {
         let webView = WKWebView()
         webView.navigationDelegate = context.coordinator
         webView.configuration.userContentController.add(context.coordinator, name: handlerName)
         return webView
     }
-    
+
     func updateUIView(_ webView: WKWebView, context: Context) {
         if let url, webView.url != url {
             print(#function, url)
             webView.load(URLRequest(url: url))
         }
     }
-    
+
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let handler: ((URL) -> Void)?
-    
+
         init(handler: ((URL) -> Void)?) {
             self.handler = handler
         }
-        
+
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
             print(#function, navigationAction.request.url ?? "nil")
             return .allow
         }
-        
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard handler != nil else { return }
-            
+
             Task { @MainActor in
                 let source = """
                     var src = document.querySelector("video").src
@@ -492,7 +516,7 @@ struct WebView: UIViewRepresentable {
                 }
             }
         }
-        
+
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             print(#function, message.body)
             guard let string = message.body as? String,
@@ -500,7 +524,7 @@ struct WebView: UIViewRepresentable {
             handler?(url)
         }
     }
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(handler: handler)
     }
@@ -516,9 +540,9 @@ struct WebView: UIViewRepresentable {
 
 struct Browser: View {
     @State private var address = ""
-    
+
     @State private var url = URL(string: "https://instagram.com")
-    
+
     var body: some View {
         VStack {
             TextField("Address", text: $address)
