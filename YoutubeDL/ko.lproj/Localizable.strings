@@ -23,16 +23,8 @@
 */
 
 "TranscodingStoppedMessage" = "트랜스코딩이 중딘되었습니다. 앱으로 전환하고 트랜스코딩을 다시 하세요.";
-"Paused" = "일시중지됨";
-"Resumed" = "재개됨";
-"Cancelled" = "취소됨";
-"NoSuitableFormat" = "조건에 맞는 포맷의 비디오가 없습니다.";
 "DownloadStartFormat" = "다운로드 시작: %@";
 "NoTitle?" = "제목 없음?";
-"ChooseFormat" = "다운로드 포맷 선택";
-"SomeFormatsNeedTranscoding" = "어떤 포맷은 다운로드 후 변환이 필요합니다.";
-"BestFormat" = "Video+Audio.mp4 (%ldp)";
-"RemuxingFormat" = "Video.%@ + Audio.%@ (%ldp)";
 "NoExt?" = "확장자 없음?";
 "Cancel" = "취소";
 "Downloaded youtube-dl. Restart app." = "youtube-dl을 다운로드 했습니다. 앱을 재시작하세요.";
@@ -53,6 +45,4 @@
 "DownloadProgressFormat" = "%@ 총 %@ 속도 %@/s 남은 시간 %@ %@";
 "Paste URL" = "URL 붙여넣기";
 "Nothing to paste" = "붙여넣을 것이 없습니다";
-"Prepend \"y\" to URL in Safari" = "Safari에서 주소 앞에 \"y\"를 추가하세요";
-"Download shortcut" = "단축어 다운로드";
 "Keep screen turned on" = "화면 켜짐 유지";

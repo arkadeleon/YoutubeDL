@@ -34,21 +34,13 @@ import PythonKit
 import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
+typealias TimeRange = Range<TimeInterval>
+
 @MainActor
 class AppModel: ObservableObject {
     @Published var url: URL?
 
     @Published var youtubeDL = YoutubeDL()
-
-    @Published var enableChunkedDownload = true
-
-    @Published var enableTranscoding = true
-
-    @Published var supportedFormatsOnly = true
-
-    @Published var exportToPhotos = true
-
-    @Published var fileURL: URL?
 
     @Published var downloads: [DownloadedFile] = []
 
@@ -60,13 +52,7 @@ class AppModel: ObservableObject {
 
     @Published var exception: PythonObject?
 
-    @Published var info: Info?
-
-    @Published var webViewURL: URL?
-
     @Published var hasYouTubeCookies = YouTubeCookieStore.hasStoredCookies
-
-    var formatSelector: YoutubeDL.FormatSelector?
 
     lazy var subscriptions = Set<AnyCancellable>()
 
@@ -118,34 +104,10 @@ class AppModel: ObservableObject {
             }
         } catch {
             print(#function, error)
-            if (url.host ?? "").hasSuffix("instagram.com") {
-                await MainActor.run {
-                    webViewURL = url
-                }
-                return
-            }
-
             await MainActor.run {
                 self.error = error
             }
         }
-    }
-
-    func save(info: Info) throws -> URL {
-        let title = info.safeTitle
-        let fileManager = FileManager.default
-        var url = URL(fileURLWithPath: title, relativeTo: try documentsDirectory())
-        try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
-
-        // exclude from iCloud backup
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        try url.setResourceValues(values)
-
-        let data = try JSONEncoder().encode(info)
-        try data.write(to: url.appendingPathComponent("Info.json"))
-
-        return url
     }
 
     func refreshDownloads() throws {
@@ -233,14 +195,6 @@ class AppModel: ObservableObject {
 
     func documentsDirectory() throws -> URL {
         try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
-    }
-
-    func pauseDownload() {
-
-    }
-
-    func resumeDownload() {
-
     }
 
     func cancelDownload() {
