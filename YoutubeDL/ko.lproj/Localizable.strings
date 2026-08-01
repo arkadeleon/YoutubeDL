@@ -45,4 +45,4 @@
 "DownloadProgressFormat" = "%@ 총 %@ 속도 %@/s 남은 시간 %@ %@";
 "Paste URL" = "URL 붙여넣기";
 "Nothing to paste" = "붙여넣을 것이 없습니다";
-"Keep screen turned on" = "화면 켜짐 유지";
+"Keep Screen On" = "화면 켜짐 유지";

@@ -22,7 +22,7 @@ struct SettingsView: View {
 
     var body: some View {
         List {
-            Toggle("Keep screen turned on", isOn: $isIdleTimerDisabled)
+            Toggle("Keep Screen On", isOn: $isIdleTimerDisabled)
 
             Section("yt-dlp") {
                 HStack {
