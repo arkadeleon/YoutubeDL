@@ -36,6 +36,76 @@ import UniformTypeIdentifiers
 
 typealias TimeRange = Range<TimeInterval>
 
+enum DownloadState: Equatable {
+    case idle
+    case extracting
+    case downloading
+    case converting
+    case saving
+    case completed(URL)
+    case failed(String)
+
+    var isBusy: Bool {
+        switch self {
+        case .extracting, .downloading, .converting, .saving:
+            return true
+        case .idle, .completed, .failed:
+            return false
+        }
+    }
+}
+
+struct DownloadProgress: Equatable {
+    var fileName: String?
+    var completedUnitCount: Int64?
+    var totalUnitCount: Int64?
+    var throughput: Int?
+    var estimatedTimeRemaining: TimeInterval?
+
+    static let empty = DownloadProgress()
+
+    var fractionCompleted: Double? {
+        guard let completedUnitCount,
+              let totalUnitCount,
+              completedUnitCount >= 0,
+              totalUnitCount > 0 else {
+            return nil
+        }
+
+        return min(max(Double(completedUnitCount) / Double(totalUnitCount), 0), 1)
+    }
+}
+
+struct DownloadedFile: Identifiable {
+    let url: URL
+    let byteCount: Int64
+
+    var id: URL {
+        url
+    }
+
+    var name: String {
+        url.lastPathComponent
+    }
+
+    var iconName: String {
+        guard let type = UTType(filenameExtension: url.pathExtension) else {
+            return "doc"
+        }
+
+        if type.conforms(to: .movie) {
+            return "film"
+        }
+        if type.conforms(to: .audio) {
+            return "waveform"
+        }
+        if type.conforms(to: .image) {
+            return "photo"
+        }
+        return "doc"
+    }
+}
+
 @MainActor
 class AppModel: ObservableObject {
     @Published var url: URL?
@@ -44,13 +114,11 @@ class AppModel: ObservableObject {
 
     @Published var downloads: [DownloadedFile] = []
 
-    @Published var showProgress = false
+    @Published var downloadState: DownloadState = .idle
 
-    var progress = Progress()
+    @Published var downloadProgress: DownloadProgress = .empty
 
-    @Published var error: Error?
-
-    @Published var exception: PythonObject?
+    private var progress = Progress()
 
     @Published var hasYouTubeCookies = YouTubeCookieStore.hasStoredCookies
 
@@ -77,36 +145,56 @@ class AppModel: ObservableObject {
     }
 
     func startDownload(url: URL) async {
+        guard !downloadState.isBusy else {
+            return
+        }
+
         print(#function, url)
+        downloadProgress = .empty
+        downloadState = .extracting
 
         do {
-            let (info, files, infos) = try await download(url: url)
+            let (info, _, _) = try await download(url: url)
 
             let outputURL: URL
 
             guard let path = info.flatMap({ String($0["_filename"]) }) else {
-                print(#function, "no '_filename'?", info ?? "nil")
-                return
+                throw NSError(domain: "App", code: 2, userInfo: [
+                    NSLocalizedDescriptionKey: String(localized: "The downloader did not return an output file.")
+                ])
             }
             outputURL = URL(fileURLWithPath: path)
                 .deletingPathExtension()
                 .appendingPathExtension("mov")
 
-            export(url: outputURL)
-            showProgress = false
-            notify(body: "Finished")
+            downloadState = .saving
+            try await export(url: outputURL)
+
+            do {
+                try refreshDownloads()
+            } catch {
+                print(#function, "unable to refresh downloads", error)
+            }
+
+            downloadProgress = .empty
+            downloadState = .completed(outputURL)
+            notify(body: String(localized: "Download complete"))
         } catch YoutubeDLError.canceled {
             print(#function, "canceled")
+            downloadProgress = .empty
+            downloadState = .idle
+        } catch is CancellationError {
+            print(#function, "canceled")
+            downloadProgress = .empty
+            downloadState = .idle
         } catch PythonError.exception(let exception, traceback: _) {
             print(#function, exception)
-            await MainActor.run {
-                self.exception = exception
-            }
+            downloadProgress = .empty
+            downloadState = .failed(exception.description)
         } catch {
             print(#function, error)
-            await MainActor.run {
-                self.error = error
-            }
+            downloadProgress = .empty
+            downloadState = .failed(error.localizedDescription)
         }
     }
 
@@ -202,9 +290,8 @@ class AppModel: ObservableObject {
     }
 
     func download(url: URL) async throws -> (PythonObject?, [String], [PythonObject]) {
+        progress = Progress()
         progress.localizedDescription = NSLocalizedString("Extracting info", comment: "progress description")
-
-        showProgress = true
 
         var info: PythonObject?
         var files = [String]()
@@ -237,8 +324,11 @@ class AppModel: ObservableObject {
 
             switch status {
             case "downloading":
+                self.downloadState = .downloading
                 self.progress.kind = .file
                 self.progress.fileOperationKind = .downloading
+                let fileName = String(dict["tmpfilename"] ?? Python.None)
+                    .map { URL(fileURLWithPath: $0).lastPathComponent }
                 if #available(iOS 16.0, *) {
                     self.progress.fileURL = URL(filePath: String(dict["tmpfilename"]!)!)
                 } else {
@@ -248,6 +338,13 @@ class AppModel: ObservableObject {
                 self.progress.totalUnitCount = Int64(Double(dict["total_bytes"] ?? dict["total_bytes_estimate"] ?? Python.None) ?? -1)
                 self.progress.throughput = Int(dict["speed"]!)
                 self.progress.estimatedTimeRemaining = TimeInterval(dict["eta"]!)
+                self.downloadProgress = DownloadProgress(
+                    fileName: fileName,
+                    completedUnitCount: self.progress.completedUnitCount,
+                    totalUnitCount: self.progress.totalUnitCount,
+                    throughput: self.progress.throughput,
+                    estimatedTimeRemaining: self.progress.estimatedTimeRemaining
+                )
             case "finished":
                 print(#function, dict["filename"] ?? "no filename")
                 files.append(String(dict["filename"]!)!)
@@ -262,10 +359,15 @@ class AppModel: ObservableObject {
                 error = message
             }
         } makeTranscodeProgressBlock: {
+            self.downloadState = .converting
             self.progress.kind = nil
             self.progress.localizedDescription = NSLocalizedString("Transcoding...", comment: "Progress description")
             self.progress.completedUnitCount = 0
             self.progress.totalUnitCount = 100
+            self.downloadProgress = DownloadProgress(
+                completedUnitCount: 0,
+                totalUnitCount: 100
+            )
 
             let t0 = ProcessInfo.processInfo.systemUptime
 
@@ -279,6 +381,11 @@ class AppModel: ObservableObject {
 
                 self.progress.completedUnitCount = Int64(progress * 100)
                 self.progress.estimatedTimeRemaining = ETA
+                self.downloadProgress = DownloadProgress(
+                    completedUnitCount: self.progress.completedUnitCount,
+                    totalUnitCount: self.progress.totalUnitCount,
+                    estimatedTimeRemaining: ETA
+                )
             }
         }
 
@@ -415,48 +522,13 @@ class AppModel: ObservableObject {
         }
     }
 
-    func export(url: URL) {
-        PHPhotoLibrary.shared().performChanges({
+    func export(url: URL) async throws {
+        try await PHPhotoLibrary.shared().performChanges {
             _ = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
-        }) { success, error in
-            print(#function, success, error ?? "")
-            DispatchQueue.main.async {
-                self.error = error
-            }
         }
     }
 
     func share() {
 
-    }
-}
-
-struct DownloadedFile: Identifiable {
-    let url: URL
-    let byteCount: Int64
-
-    var id: URL {
-        url
-    }
-
-    var name: String {
-        url.lastPathComponent
-    }
-
-    var iconName: String {
-        guard let type = UTType(filenameExtension: url.pathExtension) else {
-            return "doc"
-        }
-
-        if type.conforms(to: .movie) {
-            return "film"
-        }
-        if type.conforms(to: .audio) {
-            return "waveform"
-        }
-        if type.conforms(to: .image) {
-            return "photo"
-        }
-        return "doc"
     }
 }

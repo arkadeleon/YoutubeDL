@@ -22,7 +22,6 @@
 //  THE SOFTWARE.
 //
 
-import Foundation
 import SwiftUI
 
 struct MainView: View {
@@ -63,75 +62,5 @@ struct MainView: View {
         .onChange(of: isIdleTimerDisabled) { newValue in
             UIApplication.shared.isIdleTimerDisabled = newValue
         }
-    }
-}
-
-struct DownloadView: View {
-    @State private var alertMessage: String?
-
-    @State private var isShowingAlert = false
-
-    @State private var error: Error? {
-        didSet {
-            guard error != nil else { return }
-            alertMessage = error?.localizedDescription
-            isShowingAlert = true
-        }
-    }
-
-    @EnvironmentObject private var app: AppModel
-
-    @State private var urlString = ""
-
-    var body: some View {
-        List {
-            Section {
-                TextField("Enter URL", text: $urlString)
-                    .onSubmit(submitURL)
-
-                Button("Paste URL", action: pasteURL)
-            }
-
-            if app.showProgress {
-                ProgressView(app.progress)
-            }
-        }
-        .onChange(of: app.url) { newValue in
-            guard let url = newValue else { return }
-            urlString = url.absoluteString
-        }
-        .onReceive(app.$error) {
-            error = $0
-        }
-        .onReceive(app.$exception) {
-            alertMessage = $0?.description
-            isShowingAlert = alertMessage != nil
-        }
-        .alert(isPresented: $isShowingAlert) {
-            Alert(title: Text(alertMessage ?? "no message?"))
-        }
-    }
-
-    private func pasteURL() {
-        let pasteBoard = UIPasteboard.general
-        guard let url = pasteBoard.url ?? pasteBoard.string.flatMap(URL.init(string:)) else {
-            alert(message: "Nothing to paste")
-            return
-        }
-        urlString = url.absoluteString
-        app.url = url
-    }
-
-    private func submitURL() {
-        guard let url = URL(string: urlString) else {
-            alert(message: "Invalid URL")
-            return
-        }
-        app.url = url
-    }
-
-    private func alert(message: String) {
-        alertMessage = message
-        isShowingAlert = true
     }
 }
