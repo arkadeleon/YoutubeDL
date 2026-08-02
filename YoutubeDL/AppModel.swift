@@ -40,14 +40,14 @@ enum DownloadState: Equatable {
     case idle
     case extracting
     case downloading
-    case converting
+    case transcoding
     case saving
     case completed(URL)
     case failed(String)
 
     var isBusy: Bool {
         switch self {
-        case .extracting, .downloading, .converting, .saving:
+        case .extracting, .downloading, .transcoding, .saving:
             return true
         case .idle, .completed, .failed:
             return false
@@ -390,7 +390,7 @@ class AppModel: ObservableObject {
     }
 
     private func beginTranscodeProgress() {
-        downloadState = .converting
+        downloadState = .transcoding
         progress.kind = nil
         progress.localizedDescription = NSLocalizedString("Transcoding...", comment: "Progress description")
         progress.completedUnitCount = 0
@@ -415,7 +415,7 @@ class AppModel: ObservableObject {
             estimatedTimeRemaining = nil
         }
 
-        downloadState = .converting
+        downloadState = .transcoding
         progress.completedUnitCount = Int64(fractionCompleted * 100)
         progress.estimatedTimeRemaining = estimatedTimeRemaining
         downloadProgress = DownloadProgress(

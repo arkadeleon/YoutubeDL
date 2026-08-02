@@ -166,8 +166,8 @@ private struct DownloadStatusView: View {
             return String(localized: "Extracting information…")
         case .downloading:
             return String(localized: "Downloading…")
-        case .converting:
-            return String(localized: "Converting…")
+        case .transcoding:
+            return String(localized: "Transcoding…")
         case .saving:
             return String(localized: "Saving to Photos…")
         case .completed:
