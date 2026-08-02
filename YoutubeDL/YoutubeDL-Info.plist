@@ -54,10 +54,6 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Save video</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Fetch video</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>DownloadIntent</string>

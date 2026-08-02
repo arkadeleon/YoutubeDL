@@ -29,7 +29,6 @@ import YoutubeDL
 import Combine
 import UIKit
 import AVFoundation
-import Photos
 import PythonKit
 import QuickLookThumbnailing
 import UniformTypeIdentifiers
@@ -41,13 +40,12 @@ enum DownloadState: Equatable {
     case extracting
     case downloading
     case transcoding
-    case saving
     case completed(URL)
     case failed(String)
 
     var isBusy: Bool {
         switch self {
-        case .extracting, .downloading, .transcoding, .saving:
+        case .extracting, .downloading, .transcoding:
             return true
         case .idle, .completed, .failed:
             return false
@@ -160,9 +158,6 @@ class AppModel: ObservableObject {
 
         do {
             let outputURL = try await download(url: url)
-
-            downloadState = .saving
-            try await export(url: outputURL)
 
             do {
                 try refreshDownloads()
@@ -548,12 +543,6 @@ class AppModel: ObservableObject {
                     return true
                 })
             }
-        }
-    }
-
-    func export(url: URL) async throws {
-        try await PHPhotoLibrary.shared().performChanges {
-            _ = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
         }
     }
 

@@ -168,8 +168,6 @@ private struct DownloadStatusView: View {
             return String(localized: "Downloading…")
         case .transcoding:
             return String(localized: "Transcoding…")
-        case .saving:
-            return String(localized: "Saving to Photos…")
         case .completed:
             return String(localized: "Download complete")
         case .failed:

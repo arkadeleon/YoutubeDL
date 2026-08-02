@@ -24,7 +24,6 @@ import Foundation
 import PythonKit
 import PythonSupport
 import AVFoundation
-import Photos
 import UIKit
 import FFmpegSupport
 
@@ -236,7 +235,7 @@ open class YoutubeDL: NSObject {
             
             switch kind {
             case .complete:
-                export(url)
+                finishDownload(at: url)
             case .videoOnly, .audioOnly:
                 let directory = url.deletingLastPathComponent()
                 guard let download = pendingDownloads.first(where: { $0.directory.path == directory.path }) else {
@@ -674,7 +673,7 @@ open class YoutubeDL: NSObject {
                     removeItem(at: audioURL)
                 }
                 
-                self.export(outputURL)
+                self.finishDownload(at: outputURL)
             } else {
                 print(#function, session.error ?? "no error?")
             }
@@ -752,41 +751,30 @@ open class YoutubeDL: NSObject {
         tryMerge(directory: url.deletingLastPathComponent(), title: url.title, timeRange: download.timeRange)
     }
     
-    internal func export(_ url: URL) {
+    internal func finishDownload(at url: URL) {
+        if let continuation = finishedContinuation {
+            continuation.yield(url)
+        } else {
+            notify(body: NSLocalizedString("Download complete!", comment: "Notification body"))
+        }
+
         DispatchQueue.main.async {
             let progress = self.downloader.progress
             progress.localizedDescription = nil
             progress.localizedAdditionalDescription = nil
             progress.kind = .file
-            progress.fileOperationKind = .copying
+            progress.fileOperationKind = nil
             progress.fileURL = url
-            progress.completedUnitCount = 0
+            progress.fileCompletedCount = 1
+            progress.fileTotalCount = 1
             progress.estimatedTimeRemaining = nil
             progress.throughput = nil
-            progress.fileTotalCount = 1
-        }
-        
-        PHPhotoLibrary.shared().performChanges({
-            _ = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
-            //                            changeRequest.contentEditingOutput = output
-        }) { (success, error) in
-            print(#function, success, error ?? "")
-            
-            if let continuation = self.finishedContinuation {
-                continuation.yield(url)
-            } else {
-                notify(body: NSLocalizedString("Download complete!", comment: "Notification body"))
-            }
-            DispatchQueue.main.async {
-                let progress = self.downloader.progress
-                progress.fileCompletedCount = 1
-                do {
-                    let attributes = try FileManager.default.attributesOfItem(atPath: url.path) as NSDictionary
-                    progress.completedUnitCount = Int64(attributes.fileSize())
-                }
-                catch {
-                    progress.localizedDescription = error.localizedDescription
-                }
+            do {
+                let attributes = try FileManager.default.attributesOfItem(atPath: url.path) as NSDictionary
+                progress.completedUnitCount = Int64(attributes.fileSize())
+                progress.totalUnitCount = progress.completedUnitCount
+            } catch {
+                progress.localizedDescription = error.localizedDescription
             }
         }
     }
