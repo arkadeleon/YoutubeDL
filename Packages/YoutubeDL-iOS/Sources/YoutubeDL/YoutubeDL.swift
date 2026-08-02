@@ -867,7 +867,17 @@ extension URLSessionDownloadTask {
 }
 
 // https://github.com/yt-dlp/yt-dlp/blob/4f08e586553755ab61f64a5ef9b14780d91559a7/yt_dlp/YoutubeDL.py#L338
-public func yt_dlp(argv: [String], progress: (([String: PythonObject]) -> Void)? = nil, log: ((String, String) -> Void)? = nil, makeTranscodeProgressBlock: (() -> ((Double) -> Void)?)? = nil) async throws {
+public func yt_dlp(
+    argv: [String],
+    progress: (([String: PythonObject]) -> Void)? = nil,
+    log: ((String, String) -> Void)? = nil,
+    makeTranscodeProgressBlock: (() -> ((Double) -> Void)?)? = nil,
+    events: AsyncStream<YtDlpEvent>.Continuation? = nil
+) async throws {
+    defer {
+        events?.finish()
+    }
+
     let context = Context()
     let yt_dlp = try await YtDlp(context: context)
     
@@ -875,12 +885,20 @@ public func yt_dlp(argv: [String], progress: (([String: PythonObject]) -> Void)?
     
     // https://github.com/yt-dlp/yt-dlp#adding-logger-and-progress-hook
     
-    if let log {
-        ydl_opts["logger"] = makeLogger(name: "MyLogger", log)
+    if log != nil || events != nil {
+        ydl_opts["logger"] = makeLogger(name: "MyLogger") { level, message in
+            log?(level, message)
+            events?.yield(.log(level: level, message: message))
+        }
     }
     
-    if let progress {
-        ydl_opts["progress_hooks"] = [makeProgressHook(progress)]
+    if progress != nil || events != nil {
+        ydl_opts["progress_hooks"] = [makeProgressHook { dictionary in
+            progress?(dictionary)
+            if let downloadProgress = YtDlpDownloadProgress(dictionary: dictionary) {
+                events?.yield(.downloadProgress(downloadProgress))
+            }
+        }]
     }
     
     let myPP = yt_dlp.makePostProcessor(name: "MyPP") { pythonSelf, info in
@@ -908,7 +926,17 @@ public func yt_dlp(argv: [String], progress: (([String: PythonObject]) -> Void)?
     
     ydl.add_post_processor(myPP, when: "before_dl")
     
-    context.willTranscode = makeTranscodeProgressBlock
+    if makeTranscodeProgressBlock != nil || events != nil {
+        context.willTranscode = {
+            let progressBlock = makeTranscodeProgressBlock?()
+            events?.yield(.transcodeStarted)
+
+            return { progress in
+                progressBlock?(progress)
+                events?.yield(.transcodeProgress(progress))
+            }
+        }
+    }
     
     try ydl.download.throwing.dynamicallyCall(withArguments: all_urls)
 }

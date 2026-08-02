@@ -76,6 +76,11 @@ struct DownloadProgress: Equatable {
     }
 }
 
+struct YtDlpDownloadResult: Equatable {
+    var outputFilePath: String?
+    var errorMessage: String?
+}
+
 struct DownloadedFile: Identifiable {
     let url: URL
     let byteCount: Int64
@@ -154,18 +159,7 @@ class AppModel: ObservableObject {
         downloadState = .extracting
 
         do {
-            let (info, _, _) = try await download(url: url)
-
-            let outputURL: URL
-
-            guard let path = info.flatMap({ String($0["_filename"]) }) else {
-                throw NSError(domain: "App", code: 2, userInfo: [
-                    NSLocalizedDescriptionKey: String(localized: "The downloader did not return an output file.")
-                ])
-            }
-            outputURL = URL(fileURLWithPath: path)
-                .deletingPathExtension()
-                .appendingPathExtension("mov")
+            let outputURL = try await download(url: url)
 
             downloadState = .saving
             try await export(url: outputURL)
@@ -289,14 +283,9 @@ class AppModel: ObservableObject {
 
     }
 
-    func download(url: URL) async throws -> (PythonObject?, [String], [PythonObject]) {
+    func download(url: URL) async throws -> URL {
         progress = Progress()
         progress.localizedDescription = NSLocalizedString("Extracting info", comment: "progress description")
-
-        var info: PythonObject?
-        var files = [String]()
-        var formats = [PythonObject]()
-        var error: String?
 
         var argv: [String] = [
             "-f", "bestvideo[vcodec!^=vp9][vcodec!^=av01]+bestaudio/bestvideo+bestaudio/best",
@@ -310,90 +299,130 @@ class AppModel: ObservableObject {
         }
         argv.append(url.absoluteString)
         print(#function, argv)
-        try await yt_dlp(argv: argv) { dict in
-            info = dict["info_dict"]
-//            if self.info == nil {
-//                DispatchQueue.main.async {
-//                    self.info = try? PythonDecoder().decode(Info.self, from: info!)
-//                }
-//            }
+        let (events, eventContinuation) = AsyncStream.makeStream(of: YtDlpEvent.self)
+        async let downloadResult = consumeYtDlpEvents(events)
 
-            let status = String(dict["status"]!)
+        try await yt_dlp(argv: argv, events: eventContinuation)
 
-            self.progress.localizedDescription = nil
+        let result = await downloadResult
+        if let errorMessage = result.errorMessage {
+            throw NSError(domain: "App", code: 1, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+        }
+        guard let outputFilePath = result.outputFilePath else {
+            throw NSError(domain: "App", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: String(localized: "The downloader did not return an output file.")
+            ])
+        }
 
-            switch status {
-            case "downloading":
-                self.downloadState = .downloading
-                self.progress.kind = .file
-                self.progress.fileOperationKind = .downloading
-                let fileName = String(dict["tmpfilename"] ?? Python.None)
-                    .map { URL(fileURLWithPath: $0).lastPathComponent }
-                if #available(iOS 16.0, *) {
-                    self.progress.fileURL = URL(filePath: String(dict["tmpfilename"]!)!)
-                } else {
-                    // Fallback on earlier versions
+        return URL(fileURLWithPath: outputFilePath)
+            .deletingPathExtension()
+            .appendingPathExtension("mov")
+    }
+
+    func consumeYtDlpEvents(_ events: AsyncStream<YtDlpEvent>) async -> YtDlpDownloadResult {
+        var result = YtDlpDownloadResult()
+        var transcodeStartTime: TimeInterval?
+
+        for await event in events {
+            switch event {
+            case .downloadProgress(let progress):
+                if let outputFilePath = progress.outputFilePath {
+                    result.outputFilePath = outputFilePath
                 }
-                self.progress.completedUnitCount = Int64(dict["downloaded_bytes"]!) ?? -1
-                self.progress.totalUnitCount = Int64(Double(dict["total_bytes"] ?? dict["total_bytes_estimate"] ?? Python.None) ?? -1)
-                self.progress.throughput = Int(dict["speed"]!)
-                self.progress.estimatedTimeRemaining = TimeInterval(dict["eta"]!)
-                self.downloadProgress = DownloadProgress(
-                    fileName: fileName,
-                    completedUnitCount: self.progress.completedUnitCount,
-                    totalUnitCount: self.progress.totalUnitCount,
-                    throughput: self.progress.throughput,
-                    estimatedTimeRemaining: self.progress.estimatedTimeRemaining
-                )
-            case "finished":
-                print(#function, dict["filename"] ?? "no filename")
-                files.append(String(dict["filename"]!)!)
-                formats.append(info!)
-            default:
-                print(#function, dict)
-            }
-        } log: { level, message in
-            print(#function, level, message)
+                updateDownloadProgress(progress)
 
-            if level == "error" || message.hasSuffix("has already been downloaded") {
-                error = message
+            case .log(let level, let message):
+                print(#function, level, message)
+                if level == "error" || message.hasSuffix("has already been downloaded") {
+                    result.errorMessage = message
+                }
+
+            case .transcodeStarted:
+                transcodeStartTime = ProcessInfo.processInfo.systemUptime
+                beginTranscodeProgress()
+
+            case .transcodeProgress(let fractionCompleted):
+                if transcodeStartTime == nil {
+                    transcodeStartTime = ProcessInfo.processInfo.systemUptime
+                    beginTranscodeProgress()
+                }
+                updateTranscodeProgress(
+                    fractionCompleted,
+                    startTime: transcodeStartTime ?? ProcessInfo.processInfo.systemUptime
+                )
             }
-        } makeTranscodeProgressBlock: {
-            self.downloadState = .converting
-            self.progress.kind = nil
-            self.progress.localizedDescription = NSLocalizedString("Transcoding...", comment: "Progress description")
-            self.progress.completedUnitCount = 0
-            self.progress.totalUnitCount = 100
-            self.downloadProgress = DownloadProgress(
-                completedUnitCount: 0,
-                totalUnitCount: 100
+        }
+
+        return result
+    }
+
+    private func updateDownloadProgress(_ update: YtDlpDownloadProgress) {
+        progress.localizedDescription = nil
+
+        switch update.status {
+        case "downloading":
+            downloadState = .downloading
+            progress.kind = .file
+            progress.fileOperationKind = .downloading
+            let fileName = update.temporaryFilePath
+                .map { URL(fileURLWithPath: $0).lastPathComponent }
+            if #available(iOS 16.0, *), let temporaryFilePath = update.temporaryFilePath {
+                progress.fileURL = URL(filePath: temporaryFilePath)
+            }
+            progress.completedUnitCount = update.downloadedBytes ?? -1
+            progress.totalUnitCount = update.totalBytes ?? -1
+            progress.throughput = update.throughput
+            progress.estimatedTimeRemaining = update.estimatedTimeRemaining
+            downloadProgress = DownloadProgress(
+                fileName: fileName,
+                completedUnitCount: progress.completedUnitCount,
+                totalUnitCount: progress.totalUnitCount,
+                throughput: progress.throughput,
+                estimatedTimeRemaining: progress.estimatedTimeRemaining
             )
 
-            let t0 = ProcessInfo.processInfo.systemUptime
+        case "finished":
+            print(#function, update.outputFilePath ?? "no filename")
 
-            return { (progress: Double) in
-                print(#function, "transcode:", progress)
-                let elapsed = ProcessInfo.processInfo.systemUptime - t0
-                let speed = progress / elapsed
-                let ETA = (1 - progress) / speed
+        default:
+            print(#function, update)
+        }
+    }
 
-                guard ETA.isFinite else { return }
+    private func beginTranscodeProgress() {
+        downloadState = .converting
+        progress.kind = nil
+        progress.localizedDescription = NSLocalizedString("Transcoding...", comment: "Progress description")
+        progress.completedUnitCount = 0
+        progress.totalUnitCount = 100
+        progress.estimatedTimeRemaining = nil
+        downloadProgress = DownloadProgress(
+            completedUnitCount: 0,
+            totalUnitCount: 100
+        )
+    }
 
-                self.progress.completedUnitCount = Int64(progress * 100)
-                self.progress.estimatedTimeRemaining = ETA
-                self.downloadProgress = DownloadProgress(
-                    completedUnitCount: self.progress.completedUnitCount,
-                    totalUnitCount: self.progress.totalUnitCount,
-                    estimatedTimeRemaining: ETA
-                )
-            }
+    private func updateTranscodeProgress(_ progressValue: Double, startTime: TimeInterval) {
+        print(#function, "transcode:", progressValue)
+
+        let fractionCompleted = min(max(progressValue, 0), 1)
+        let elapsed = ProcessInfo.processInfo.systemUptime - startTime
+        let estimatedTimeRemaining: TimeInterval?
+        if fractionCompleted > 0, elapsed > 0 {
+            let estimate = (1 - fractionCompleted) / (fractionCompleted / elapsed)
+            estimatedTimeRemaining = estimate.isFinite && estimate >= 0 ? estimate : nil
+        } else {
+            estimatedTimeRemaining = nil
         }
 
-        if let error {
-            throw NSError(domain: "App", code: 1, userInfo: [NSLocalizedDescriptionKey: error])
-        }
-
-        return (info, files, formats)
+        downloadState = .converting
+        progress.completedUnitCount = Int64(fractionCompleted * 100)
+        progress.estimatedTimeRemaining = estimatedTimeRemaining
+        downloadProgress = DownloadProgress(
+            completedUnitCount: progress.completedUnitCount,
+            totalUnitCount: progress.totalUnitCount,
+            estimatedTimeRemaining: estimatedTimeRemaining
+        )
     }
 
     func saveYouTubeCookies(_ cookies: [HTTPCookie]) throws {
