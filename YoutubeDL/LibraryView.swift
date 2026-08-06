@@ -1,12 +1,12 @@
 //
-//  DownloadsView.swift
+//  LibraryView.swift
 //  YoutubeDL
 //
 
 import QuickLook
 import SwiftUI
 
-struct DownloadsView: View {
+struct LibraryView: View {
     @EnvironmentObject private var app: AppModel
 
     @State private var sharedFile: DownloadedFile?
@@ -14,39 +14,38 @@ struct DownloadsView: View {
     @State private var isShowingError = false
 
     var body: some View {
-        List {
-            if app.downloads.isEmpty {
-                Label("No Downloads", systemImage: "folder")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(app.downloads) { file in
-                    NavigationLink {
-                        FilePreviewView(url: file.url)
-                            .navigationTitle(file.name)
-                            .navigationBarTitleDisplayMode(.inline)
-                    } label: {
-                        FileRow(file: file)
-                    }
-                    .contextMenu {
-                        Button("Share", systemImage: "square.and.arrow.up") {
-                            share(file)
-                        }
-
-                        Button("Delete", systemImage: "trash", role: .destructive) {
-                            delete(file)
-                        }
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button("Delete", systemImage: "trash", role: .destructive) {
-                            delete(file)
-                        }
-
-                        Button("Share", systemImage: "square.and.arrow.up") {
-                            share(file)
-                        }
-                        .tint(.blue)
-                    }
+        List(app.downloads) { file in
+            NavigationLink {
+                FilePreviewView(url: file.url)
+                    .navigationTitle(file.name)
+                    .navigationBarTitleDisplayMode(.inline)
+            } label: {
+                FileRow(file: file)
+            }
+            .contextMenu {
+                Button("Share", systemImage: "square.and.arrow.up") {
+                    share(file)
                 }
+
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    delete(file)
+                }
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    delete(file)
+                }
+
+                Button("Share", systemImage: "square.and.arrow.up") {
+                    share(file)
+                }
+                .tint(.blue)
+            }
+        }
+        .overlay {
+            if app.downloads.isEmpty {
+                Label("No Files", systemImage: "photo.fill.on.rectangle.fill")
+                    .foregroundStyle(.secondary)
             }
         }
         .onAppear {

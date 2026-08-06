@@ -35,16 +35,16 @@ struct MainView: View {
                     .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
-                Label("Download", systemImage: "arrow.down.circle")
+                Label("Download", systemImage: "arrow.down.to.line")
             }
 
             NavigationView {
-                DownloadsView()
-                    .navigationTitle("Downloads")
+                LibraryView()
+                    .navigationTitle("Library")
                     .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
-                Label("Downloads", systemImage: "folder.circle")
+                Label("Library", systemImage: "photo.fill.on.rectangle.fill")
             }
 
             NavigationView {
@@ -53,7 +53,7 @@ struct MainView: View {
                     .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
-                Label("Settings", systemImage: "gear.circle")
+                Label("Settings", systemImage: "gear")
             }
         }
         .onAppear {
