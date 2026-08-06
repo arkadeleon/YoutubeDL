@@ -1,17 +1,12 @@
 //
 //  JavaScriptCoreRuntime.swift
-//  YoutubeDL
 //
 
 import Foundation
 import JavaScriptCore
 
-/// Runs standalone scripts in JavaScriptCore, standing in for the external
-/// JavaScript runtimes (Deno, Node, Bun, QuickJS) that yt-dlp shells out to but
-/// that cannot exist on iOS.
-///
-/// The contract mirrors those runtimes: a script is fed in, whatever it writes
-/// to `console.log` is handed back as its output.
+/// Runs scripts in JavaScriptCore, in place of the external JavaScript runtimes
+/// (Deno, Node, Bun, QuickJS) that yt-dlp runs but iOS cannot.
 public final class JavaScriptCoreRuntime {
     public enum Error: LocalizedError {
         case contextUnavailable
@@ -29,18 +24,18 @@ public final class JavaScriptCoreRuntime {
 
     public static let shared = JavaScriptCoreRuntime()
 
-    /// The solver parses the whole YouTube player with a recursive descent parser.
-    /// The default 512 KB of a background thread is enough for the players seen so
-    /// far, but the depth is YouTube's to change, and the reservation costs nothing.
+    /// The solver parses the whole YouTube player with a recursive parser. The
+    /// default 512 KB stack fits the players seen so far, but YouTube can make
+    /// them deeper at any time, and reserving more costs nothing.
     static let stackSize = 32 << 20
 
     private init() {}
 
-    /// Evaluates `script` and returns everything it logged to `console.log`.
+    /// Runs `script` and returns everything it wrote to `console.log`.
     ///
-    /// The script runs on a dedicated thread with an enlarged stack, in a fresh
-    /// virtual machine so that the memory taken by the player script is released
-    /// as soon as it finishes.
+    /// Each call gets its own thread with a bigger stack and a new virtual
+    /// machine, so the memory the player script uses is freed as soon as it
+    /// finishes.
     public func evaluate(_ script: String) throws -> String {
         var result: Result<String, Swift.Error> = .failure(Error.contextUnavailable)
 
@@ -51,7 +46,7 @@ public final class JavaScriptCoreRuntime {
         }
         thread.name = "JavaScriptCoreRuntime"
         thread.stackSize = Self.stackSize
-        // The caller blocks on this thread, so keep it off a lower priority.
+        // The caller waits for this thread, so do not give it a lower priority.
         thread.qualityOfService = Thread.current.qualityOfService
         thread.start()
         semaphore.wait()
@@ -81,7 +76,7 @@ public final class JavaScriptCoreRuntime {
         return output.stdout
     }
 
-    /// JavaScriptCore has no `console`, so provide the parts the solver uses.
+    /// JavaScriptCore has no `console`, so add the parts the solver uses.
     private static func install(console output: Output, in context: JSContext) {
         context.evaluateScript("globalThis.console = {};")
         guard let console = context.objectForKeyedSubscript("console") else { return }
@@ -114,7 +109,7 @@ public final class JavaScriptCoreRuntime {
         return "\(message)\n\(stack)"
     }
 
-    /// Boxes the captured output so the `console` blocks can append to it.
+    /// A reference type so the `console` blocks can append to the output.
     private final class Output {
         var stdout = ""
     }

@@ -1,24 +1,22 @@
 //
 //  JavaScriptCoreJsChallengeProvider.swift
-//  YoutubeDL
 //
 
 import Foundation
 import PythonKit
 import PythonSupport
 
-/// yt-dlp needs a JavaScript runtime to solve YouTube's `n` and `sig` challenges,
-/// and without one it drops every real format, leaving only storyboard images.
-/// It looks for Deno, Node, Bun or QuickJS, none of which can exist on iOS, so
-/// register a challenge provider that runs the solver in JavaScriptCore instead.
+/// yt-dlp needs a JavaScript runtime to solve YouTube's `n` and `sig`
+/// challenges. Without one it drops every real format and leaves only storyboard
+/// images. It looks for Deno, Node, Bun or QuickJS, which iOS cannot run, so
+/// register a challenge provider that runs the solver in JavaScriptCore.
 ///
-/// Everything but the actual evaluation is already handled by yt-dlp's
-/// `EJSBaseJCP`, which loads the solver script and speaks its JSON protocol.
-/// See https://github.com/yt-dlp/yt-dlp/wiki/EJS
+/// yt-dlp's `EJSBaseJCP` does everything else: it loads the solver script and
+/// speaks its JSON protocol. See https://github.com/yt-dlp/yt-dlp/wiki/EJS
 func registerJavaScriptCoreJsChallengeProvider() {
     guard javaScriptCoreEvaluate == nil else { return }
 
-    // Held for the lifetime of the process: yt-dlp calls it on every download.
+    // Kept for the whole process: yt-dlp calls it on every download.
     javaScriptCoreEvaluate = PythonFunction { args in
         guard let script = String(args[0]) else {
             throw JavaScriptCoreRuntime.Error.exception("Expected the script as a string.")
@@ -50,19 +48,18 @@ private let providerSource = """
 
         @register_provider
         class JavaScriptCoreJCP(EJSBaseJCP, BuiltinIEContentProvider):
-            # The provider name and key are the class name without the suffix.
             JS_RUNTIME_NAME = 'JavaScriptCore'
 
-            # Parsing the player script again on every download is by far the most
-            # expensive part on a phone, so keep the preprocessed one around.
+            # Parsing the player script is by far the slowest part on a phone,
+            # so keep the preprocessed one.
             _ENABLE_PREPROCESSED_PLAYER_CACHE = True
 
-            # Each cached player costs a few megabytes and yt-dlp never rotates
-            # them, so keep only the handful of variants currently being served.
+            # Each cached player costs a few megabytes and yt-dlp never deletes
+            # them, so keep only the few players YouTube is serving now.
             _PLAYER_CACHE_LIMIT = 3
 
             def is_available(self):
-                # JavaScriptCore is part of the system; there is no runtime to look up.
+                # JavaScriptCore comes with the system, so there is nothing to look up.
                 return self._available
 
             def _run_js_runtime(self, stdin, /):
