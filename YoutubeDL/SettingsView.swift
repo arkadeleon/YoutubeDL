@@ -12,7 +12,7 @@ struct SettingsView: View {
     @Binding var isIdleTimerDisabled: Bool
 
     @State private var version: String?
-    @State private var isLoadingVersion = true
+    @State private var isLoadingVersion = false
     @State private var isUpdating = false
     @State private var updateRequest = 0
     @State private var isShowingYouTubeSignIn = false
@@ -32,8 +32,11 @@ struct SettingsView: View {
 
                     if isLoadingVersion {
                         ProgressView()
+                    } else if let version {
+                        Text(version)
+                            .foregroundStyle(.secondary)
                     } else {
-                        Text(version ?? "Unavailable")
+                        Text(app.downloadState.isBusy ? "Available after the download" : "Unavailable")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -48,7 +51,7 @@ struct SettingsView: View {
                         Text("Update to Latest Version")
                     }
                 }
-                .disabled(isLoadingVersion || isUpdating)
+                .disabled(isLoadingVersion || isUpdating || app.downloadState.isBusy)
             }
 
             Section("YouTube Authentication") {
@@ -68,7 +71,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .task {
+        .task(id: app.downloadState.isBusy) {
             await loadVersion()
         }
         .task(id: updateRequest) {
@@ -94,7 +97,19 @@ struct SettingsView: View {
         updateRequest += 1
     }
 
+    /// Reading the version loads the Python module, and the interpreter cannot be
+    /// used from two threads at once, so reuse the loaded version and wait for the
+    /// download to finish before loading it.
     private func loadVersion() async {
+        if let loadedVersion = app.youtubeDL.version {
+            version = loadedVersion
+            return
+        }
+        guard !app.downloadState.isBusy else {
+            return
+        }
+
+        isLoadingVersion = true
         defer {
             isLoadingVersion = false
         }
