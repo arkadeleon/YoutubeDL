@@ -41,21 +41,27 @@ struct LibraryOptions: ParsableArguments {
 struct SourceOptions: ParsableArguments {
     @Option(help: "Library source directory (default: ./<lib>)")
     var sourceDirectory: String?
-    
+
     var sourceURL: URL { URL(fileURLWithPath: sourceDirectory ?? "./\(lib)") }
-    
+
     var configureScriptExists: Bool {
         FileManager.default.fileExists(atPath: sourceURL.appendingPathComponent("configure").path)
     }
-    
+
     @Argument(help: "ffmpeg, fdk-aac, lame or x264")
     var lib = "ffmpeg"
+
+    func validate() throws {
+        guard ["ffmpeg", "fdk-aac", "lame", "x264"].contains(lib) else {
+            throw ValidationError("Unsupported library '\(lib)'. Build FFmpeg with --enable-libdav1d to include dav1d.")
+        }
+    }
 }
 
 struct BuildOptions: ParsableArguments {
     @Option(help: "directory to contain build artifacts")
     var buildDirectory = "./build"
-    
+
     @Option(help: "architectures to include")
     var arch = [
         "arm64",
@@ -72,7 +78,7 @@ struct BuildOptions: ParsableArguments {
 struct ConfigureOptions: ParsableArguments {
     @Option
     var deploymentTarget = "13.0"
-    
+
     @Option(help: "additional options for configure script")
     var extraOptions: [String] = []
 }
@@ -90,7 +96,10 @@ struct XCFrameworkOptions: ParsableArguments {
 struct DownloadOptions: ParsableArguments {
     @Option(help: "FFmpeg release")
     var release = "snapshot"
-    
+
+    @Option(help: "dav1d release")
+    var dav1dRelease = "1.5.3"
+
     @Option
     var url: String?
 }
@@ -113,25 +122,31 @@ struct LameOptions: ParsableArguments {
 extension Tool {
     struct BuildCommand: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "build", abstract: "Build framework module")
-        
+
         @Flag(help: "enable AAC de/encoding via libfdk-aac")
         var enableLibfdkAac = false
-        
+
         @Flag(help: "enable H.264 encoding via x264")
         var enableLibx264 = false
-        
+
         @Flag(help: "enable MP3 encoding via libmp3lame")
         var enableLibmp3lame = false
-        
+
+        @Flag(help: "enable AV1 software decoding via libdav1d")
+        var enableLibdav1d = false
+
+        @Option(help: "dav1d source directory when building FFmpeg with --enable-libdav1d")
+        var dav1dSource = "./dav1d"
+
         @Flag(help: "Create fat library instead of .xcframework")
         var disableXcframework = false
-        
+
         @Flag
         var disableModule = false
-        
+
         @Flag
         var disableZip = false
-        
+
         @OptionGroup var sourceOptions: SourceOptions
         @OptionGroup var buildOptions: BuildOptions
         @OptionGroup var libraryOptions: LibraryOptions
@@ -142,46 +157,63 @@ extension Tool {
         @OptionGroup var fdkAacOptions: FdkAacOptions
         @OptionGroup var x264Options: X264Options
         @OptionGroup var lameOptions: LameOptions
-        
+
+        func validate() throws {
+            if enableLibdav1d && sourceOptions.lib != "ffmpeg" {
+                throw ValidationError("--enable-libdav1d is only supported when building FFmpeg.")
+            }
+        }
+
         mutating func run() throws {
-            try DepCommand().run()
+            var dependencies = DepCommand()
+            dependencies.dav1d = enableLibdav1d
+            try dependencies.run()
+
+            if enableLibdav1d {
+                try build(lib: "dav1d", sourceDirectory: dav1dSource)
+                configureOptions.extraOptions += ["--enable-libdav1d", "--pkg-config-flags=--static"]
+            }
 
             if enableLibfdkAac {
                 try build(lib: "fdk-aac", sourceDirectory: "./fdk-aac")
-                
+
                 configureOptions.extraOptions += ["--enable-libfdk-aac", "--enable-nonfree",]
             }
 
             if enableLibmp3lame {
                 try build(lib: "lame", sourceDirectory: "./lame")
-                
+
                 configureOptions.extraOptions += ["--enable-libmp3lame",]
             }
-            
+
             if enableLibx264 {
                 try build(lib: "x264", sourceDirectory: "./x264")
-                
+
                 configureOptions.extraOptions += ["--enable-libx264", "--enable-gpl",]
             }
 
             try build(lib: sourceOptions.lib, sourceDirectory: sourceOptions.sourceURL.path)
-            
+
             print("Done")
         }
-        
+
         func build(lib: String, sourceDirectory: String) throws {
             var sourceOptions = sourceOptions
             sourceOptions.lib = lib
-            
+
             if !FileManager.default.fileExists(atPath: sourceDirectory) {
                 print("\(lib) source not found. Trying to download...")
                 var downloadSource = SourceCommand()
                 downloadSource.sourceOptions = sourceOptions
                 downloadSource.sourceOptions.sourceDirectory = sourceDirectory
                 downloadSource.downloadOptions = downloadOptions
+                if lib == "dav1d" {
+                    // A custom FFmpeg URL must not replace the dav1d download URL.
+                    downloadSource.downloadOptions.url = nil
+                }
                 try downloadSource.run()
             }
-            
+
             switch lib {
             case "ffmpeg":
                 try buildFFmpeg(sourceDirectory: sourceDirectory)
@@ -191,10 +223,12 @@ extension Tool {
                 try buildLame(sourceDirectory: sourceDirectory)
             case "x264":
                 try buildX264(sourceDirectory: sourceDirectory)
+            case "dav1d":
+                try buildDav1d(sourceDirectory: sourceDirectory)
             default:
                 throw ExitCode.failure
             }
-            
+
             if !disableXcframework {
                 print("building xcframeworks...")
                 var createXcframeworks = XCFrameworkCommand()
@@ -213,7 +247,7 @@ extension Tool {
                     modularize.sourceOptions = sourceOptions
                     try modularize.run()
                 }
-                
+
                 if !disableZip {
                     print("zipping...")
                     var zip = ZipCommand()
@@ -230,11 +264,21 @@ extension Tool {
                 try fatCommand.run()
             }
         }
-        
+
         func buildFFmpeg(sourceDirectory: String) throws {
             class FFmpegConfiguration: ConfigurationHelper, Configuration {
                 override var `as`: String { "gas-preprocessor.pl \(aarch64) -- \(cc)" }
-                
+
+                var dav1dInstall: String?
+
+                override var environment: [String: String]? {
+                    guard let dav1dInstall = dav1dInstall else { return nil }
+                    return [
+                        "PKG_CONFIG_PATH": "",
+                        "PKG_CONFIG_LIBDIR": "\(dav1dInstall)/lib/pkgconfig",
+                    ]
+                }
+
                 var options: [String] {
                     [
                         "--prefix=\(installPrefix)",
@@ -255,7 +299,7 @@ extension Tool {
                     ]
                 }
             }
-            
+
             try buildLibrary(name: "FFmpeg", sourceDirectory: sourceDirectory, arch: buildOptions.arch, deploymentTarget: configureOptions.deploymentTarget, buildDirectory: buildOptions.buildDirectory, configuration: FFmpegConfiguration.self) {
                 let platformOptions: [String]
                 switch $0.platform {
@@ -277,16 +321,76 @@ extension Tool {
                     let lameInstall = $0.installPrefix.replacingOccurrences(of: "/FFmpeg/", with: "/lame/")
                     $0.cFlags.append(" -I\(lameInstall)/include -L\(lameInstall)/lib")
                 }
+                if configureOptions.extraOptions.contains("--enable-libdav1d") {
+                    $0.dav1dInstall = $0.installPrefix.replacingOccurrences(of: "/FFmpeg/", with: "/dav1d/")
+                }
                 return $0.options
                     + configureOptions.extraOptions
                     + platformOptions
             }
         }
-        
+
+        func buildDav1d(sourceDirectory: String) throws {
+            let buildRoot = URL(fileURLWithPath: buildOptions.buildDirectory)
+            let source = URL(fileURLWithPath: sourceDirectory)
+            for architecture in buildOptions.arch {
+                let parts = architecture.split(separator: "-", maxSplits: 1).map(String.init)
+                let platform = parts.count > 1 ? (parts[1] == "catalyst" ? "MacOSX" : parts[1]) : nil
+                let prefix = buildRoot.appendingPathComponent("install/dav1d/\(architecture)")
+                let directory = buildRoot.appendingPathComponent("dav1d/\(architecture)")
+                try createDirectory(at: directory.path)
+                let configuration = ConfigurationHelper(
+                    sourceDirectory: source.path, arch: parts[0], platform: platform,
+                    deploymentTarget: configureOptions.deploymentTarget, installPrefix: prefix.path
+                )
+
+                func mesonArray(_ values: [String]) -> String {
+                    let quoted = values.map {
+                        "'" + $0.replacingOccurrences(of: "\\", with: "\\\\")
+                            .replacingOccurrences(of: "'", with: "\\'") + "'"
+                    }
+                    return "[" + quoted.joined(separator: ", ") + "]"
+                }
+                let flags = mesonArray(configuration.cFlags.split(separator: " ").map(String.init))
+                let crossFile = directory.appendingPathComponent("cross.ini")
+                let crossConfiguration = """
+                    [binaries]
+                    c = \(mesonArray(["xcrun", "-sdk", configuration.sdk, "clang"]))
+                    ar = '/usr/bin/ar'
+                    strip = '/usr/bin/strip'
+                    [host_machine]
+                    system = 'darwin'
+                    cpu_family = '\(host(configuration.arch))'
+                    cpu = '\(configuration.arch)'
+                    endian = 'little'
+                    [properties]
+                    needs_exe_wrapper = true
+                    [built-in options]
+                    c_args = \(flags)
+                    c_link_args = \(flags)
+                    """
+                try crossConfiguration.write(to: crossFile, atomically: true, encoding: .utf8)
+                let mesonBuild = directory.appendingPathComponent("build")
+                var setup = ["meson", "setup", mesonBuild.path, source.path,
+                             "--cross-file", crossFile.path, "--prefix", prefix.path,
+                             "--libdir", "lib", "--buildtype", "release", "--default-library", "static",
+                             "-Db_staticpic=true", "-Denable_tools=false", "-Denable_tests=false",
+                             "-Denable_examples=false"]
+                if FileManager.default.fileExists(atPath: mesonBuild.appendingPathComponent("build.ninja").path) {
+                    setup.append("--reconfigure")
+                }
+                try launch(launchPath: "/usr/bin/env", arguments: setup)
+                try launch(launchPath: "/usr/bin/env", arguments: ["ninja", "-C", mesonBuild.path, "-j3", "install"])
+                let license = prefix.appendingPathComponent("include/dav1d/COPYING")
+                try removeItem(at: license.path)
+                try copyItem(at: source.appendingPathComponent("COPYING").path, to: license.path)
+            }
+        }
+
         func buildFdkAac(sourceDirectory: String) throws {
             class FdkAacConfiguration: ConfigurationHelper, Configuration {
                 override var `as`: String { "\(sourceDirectory)/extras/gas-preprocessor.pl \(aarch64) -- \(cc)" }
-                
+
                 var options: [String] {
                     [
                         "--host=\(host(arch))-apple-darwin",
@@ -304,14 +408,14 @@ extension Tool {
                     ]
                 }
             }
-            
+
             try buildLibrary(name: "fdk-aac", sourceDirectory: sourceDirectory, arch: buildOptions.arch, deploymentTarget: configureOptions.deploymentTarget, buildDirectory: buildOptions.buildDirectory, configuration: FdkAacConfiguration.self)
         }
-        
+
         func buildLame(sourceDirectory: String) throws {
             class LameConfiguration: ConfigurationHelper, Configuration {
                 override var cc: String { "xcrun -sdk \(sdk) clang -arch \(arch)" }
-                
+
                 var options: [String] {
                     [
                         "--host=\(host(arch))-apple-darwin",
@@ -322,7 +426,7 @@ extension Tool {
                         "--disable-decoder",
                     ]
                 }
-                
+
                 override var environment: [String : String]? {
                     [
                         "CC": cc,
@@ -332,14 +436,14 @@ extension Tool {
                     ]
                 }
             }
-            
+
             try buildLibrary(name: "lame", sourceDirectory: sourceDirectory, arch: buildOptions.arch, deploymentTarget: configureOptions.deploymentTarget, buildDirectory: buildOptions.buildDirectory, configuration: LameConfiguration.self)
         }
-        
+
         func buildX264(sourceDirectory: String) throws {
             class X264Configuration: ConfigurationHelper, Configuration {
                 override var `as`: String { "\(URL(fileURLWithPath: sourceDirectory).path)/tools/gas-preprocessor.pl \(aarch64) -- \(cc)" }
-                
+
                 var options: [String] {
                     [
                         "--host=\(host(arch))-apple-darwin",
@@ -352,7 +456,7 @@ extension Tool {
                         "--extra-ldflags=\(ldFlags)",
                     ]
                 }
-                
+
                 override var environment: [String : String]? {
                     var env = [
                         "CC": cc,
@@ -363,10 +467,10 @@ extension Tool {
                     return env
                 }
             }
-            
+
             try buildLibrary(name: "x264", sourceDirectory: sourceDirectory, arch: buildOptions.arch, deploymentTarget: configureOptions.deploymentTarget, buildDirectory: buildOptions.buildDirectory, configuration: X264Configuration.self)
         }
-        
+
         func buildLibrary<T>(name: String, sourceDirectory: String, arch: [String], deploymentTarget: String, buildDirectory: String, configuration: T.Type, customize: (T) -> [String] = { $0.options }) throws where T: Configuration {
             let buildDir = URL(fileURLWithPath: buildDirectory)
                 .appendingPathComponent(name)
@@ -374,13 +478,13 @@ extension Tool {
                 print("building \(name) for \(archx)...")
                 let archDir = buildDir.appendingPathComponent(archx)
                 try createDirectory(at: archDir.path)
-                
+
                 let prefix = buildDir
                     .deletingLastPathComponent()
                     .appendingPathComponent("install")
                     .appendingPathComponent(name)
                     .appendingPathComponent(archx)
-                
+
                 let array = archx.split(separator: "-")
                 let platform: String?
                 if array.count > 1 {
@@ -398,7 +502,7 @@ extension Tool {
                            arguments: options,
                            currentDirectoryPath: archDir.path,
                            environment: conf.environment)
-                
+
                 try launch(launchPath: "/usr/bin/make",
                            arguments: [
                             "-j3",
@@ -410,7 +514,7 @@ extension Tool {
                             "install",
                            ]), // FIXME: GASPP_FIX_XCODE5=1 ?
                            currentDirectoryPath: archDir.path)
-                
+
                 let all = buildDir
                     .deletingLastPathComponent()
                     .appendingPathComponent("install")
@@ -426,10 +530,13 @@ extension Tool {
             }
         }
     }
-    
+
     struct DepCommand: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "dep", abstract: "Install build dependency")
-        
+
+        @Flag(help: "also install Meson, Ninja and pkg-config for dav1d")
+        var dav1d = false
+
         func run() throws {
             func installHomebrewIfNeeded() throws {
                 if !which("brew") {
@@ -437,21 +544,27 @@ extension Tool {
                     try system(#"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)""#)
                 }
             }
-            
+
             func installWithHomebrew(_ command: String) throws {
                 if !which(command) {
                     print("'\(command)' not found")
-                    
+
                     try installHomebrewIfNeeded()
-                    
+
                     print("Trying to install '\(command)'...")
                     try system("brew install \(command)")
                 }
             }
-            
+
             try installWithHomebrew("yasm")
             try installWithHomebrew("nasm")
-            
+
+            if dav1d {
+                try installWithHomebrew("meson")
+                try installWithHomebrew("ninja")
+                try installWithHomebrew("pkg-config")
+            }
+
             if !which("gas-preprocessor.pl") {
                 print("'gas-preprocessor.pl' not found. Trying to install...")
                 try system("""
@@ -462,14 +575,14 @@ extension Tool {
             }
         }
     }
-    
+
     struct SourceCommand: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "source", abstract: "Download library source code")
-        
+
         @OptionGroup var downloadOptions: DownloadOptions
-        
+
         @OptionGroup var sourceOptions: SourceOptions
-        
+
         var defaultURL: String {
             switch sourceOptions.lib {
             case "ffmpeg":
@@ -480,46 +593,50 @@ extension Tool {
                 return "https://sourceforge.net/projects/lame/files/latest/download"
             case "x264":
                 return "https://code.videolan.org/videolan/x264/-/archive/master/x264-master.tar.bz2"
+            case "dav1d":
+                return "https://downloads.videolan.org/pub/videolan/dav1d/\(downloadOptions.dav1dRelease)/dav1d-\(downloadOptions.dav1dRelease).tar.xz"
             default:
                 fatalError("unknown library: \(sourceOptions.lib)")
             }
         }
-        
+
         func run() throws {
             let url = downloadOptions.url ?? defaultURL
-            let t = "/tmp/ffmpeg-ios"
-            // FIXME: J for .xz
-            try system("""
-                mkdir \(t)
-                curl -L \(url) | tar xjC \(t)
-                mv \(t)/* \(sourceOptions.sourceURL.path)
-                rmdir \(t)
-                """)
+            let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("ffmpeg-ios-\(UUID().uuidString)")
+            let archive = temporary.appendingPathComponent("source.tar")
+            let contents = temporary.appendingPathComponent("source")
+            try createDirectory(at: contents.path)
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            try launch(launchPath: "/usr/bin/curl", arguments: ["-fL", url, "-o", archive.path])
+            // tar detects both .xz (dav1d) and the existing .bz2 source archives.
+            try launch(launchPath: "/usr/bin/tar", arguments: ["-xf", archive.path, "--strip-components", "1", "-C", contents.path])
+            try createDirectory(at: sourceOptions.sourceURL.deletingLastPathComponent().path)
+            try FileManager.default.moveItem(at: contents, to: sourceOptions.sourceURL)
         }
     }
-    
+
     struct LibCommand: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "lib", abstract: "Build a library")
         func run() throws {
             // FIXME: ...
         }
     }
-    
+
     struct FatCommand: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "fat", abstract: "Create fat library")
-        
+
         @OptionGroup var libraryOptions: LibraryOptions
-        
+
         @OptionGroup var buildOptions: BuildOptions
-        
+
         @OptionGroup var fatLibraryOptions: FatLibraryOptions
-        
+
         @OptionGroup var sourceOptions: SourceOptions
-        
+
         mutating func run() throws {
             let output = URL(fileURLWithPath: fatLibraryOptions.output ?? (sourceOptions.lib + "-fat"))
             try createDirectory(at: output.appendingPathComponent("lib").path)
-            
+
             let installDir = URL(fileURLWithPath: buildOptions.buildDirectory)
                 .appendingPathComponent("install")
                 .appendingPathComponent(sourceOptions.lib)
@@ -534,25 +651,25 @@ extension Tool {
             let to = output.appendingPathComponent("include")
 
             try removeItem(at: to.path)
-            
+
             try copyItem(at: installDir
                             .appendingPathComponent(buildOptions.arch[0])
                             .appendingPathComponent("include").path,
                          to: to.path)
         }
     }
-    
+
     struct XCFrameworkCommand: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "framework", abstract: "Create .xcframework")
-        
+
         @OptionGroup var libraryOptions: LibraryOptions
-        
+
         @OptionGroup var buildOptions: BuildOptions
-        
+
         @OptionGroup var xcframeworkOptions: XCFrameworkOptions
 
         @OptionGroup var sourceOptions: SourceOptions
-        
+
         func run() throws {
             let lib = URL(fileURLWithPath: buildOptions.buildDirectory).appendingPathComponent("install").appendingPathComponent(sourceOptions.lib)
             let contents = try FileManager.default.contentsOfDirectory(at: lib.appendingPathComponent(buildOptions.arch[0]).appendingPathComponent("lib"), includingPropertiesForKeys: nil, options: [])
@@ -564,7 +681,7 @@ extension Tool {
                     if array.count > 1 {
                         return array[1].lowercased()
                     }
-                    
+
                     switch arch {
                     case "arm64", "armv7":
                         return "iphoneos"
@@ -574,16 +691,16 @@ extension Tool {
                         fatalError()
                     }
                 }
-                
+
                 var dict: [String: Set<String>] = [:]
-                
+
                 for arch in buildOptions.arch {
                     let sdk = convert(arch)
                     var set = dict[sdk] ?? []
                     set.insert(arch)
                     dict[sdk] = set
                 }
-                
+
                 var args: [String] = []
 
                 for (sdk, set) in dict {
@@ -591,10 +708,10 @@ extension Tool {
                         fatalError()
                     }
                     let dir = "\(lib.path)/\(arch)"
-                    
+
                     let xcf = "\(buildOptions.buildDirectory)/xcf/\(sdk)"
                     try createDirectory(at: xcf)
-                    
+
                     let fat = "\(xcf)/lib\(library).a"
 
                     try launch(launchPath: "/usr/bin/lipo",
@@ -611,24 +728,24 @@ extension Tool {
                         include = "\(xcf)/\(library)/include"
                         try removeItem(at: include)
                         try createDirectory(at: include)
-                        
+
                         let copy = "\(include)/lib\(library)"
                         try removeItem(at: copy)
                         try copyItem(at: "\(dir)/include/lib\(library)", to: copy)
                     } else {
                         include = "\(dir)/include"
                     }
-                    
+
                     args += [
                         "-library", fat,
                         "-headers", include,
                     ]
                 }
-                
+
                 let output = "\(xcframeworkOptions.frameworks)/\(library).xcframework"
-                
+
                 try removeItem(at: output)
-                
+
                 try launch(launchPath: "/usr/bin/xcodebuild",
                            arguments:
                             ["-create-xcframework"]
@@ -639,10 +756,10 @@ extension Tool {
             }
         }
     }
-    
+
     struct ZipCommand: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "zip", abstract: "Zip .xcframework")
-        
+
         @OptionGroup var xcframeworkOptions: XCFrameworkOptions
 
         func run() throws {
@@ -654,23 +771,23 @@ extension Tool {
             }
         }
     }
-    
+
     struct ModuleCommand: ParsableCommand {
         static var configuration = CommandConfiguration(commandName: "module", abstract: "Enable modules to allow import from Swift")
-        
+
         @OptionGroup var libraryOptions: LibraryOptions
-        
+
         @OptionGroup var buildOptions: BuildOptions
-        
+
         @OptionGroup var xcframeworkOptions: XCFrameworkOptions
 
         @OptionGroup var sourceOptions: SourceOptions
-        
+
         func run() throws {
             let lib = URL(fileURLWithPath: buildOptions.buildDirectory).appendingPathComponent("install").appendingPathComponent(sourceOptions.lib)
             let contents = try FileManager.default.contentsOfDirectory(at: lib.appendingPathComponent(buildOptions.arch[0]).appendingPathComponent("lib"), includingPropertiesForKeys: nil, options: [])
             let modules = contents.filter { $0.pathExtension == "a" }.map { $0.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "lib", with: "") }
-            
+
             for library in modules {
                 let path = "\(xcframeworkOptions.frameworks)/\(library).xcframework"
                 let data = try Data(contentsOf: URL(fileURLWithPath: "\(path)/Info.plist"))
@@ -678,19 +795,20 @@ extension Tool {
                       let libraries = info["AvailableLibraries"] as? [[String: Any]] else {
                     throw ExitCode.failure
                 }
-                      
+
                 for dict in libraries {
                     guard let headersPath = dict["HeadersPath"] as? String,
                           let libraryIdentifier = dict["LibraryIdentifier"] as? String else {
                         throw ExitCode.failure
                     }
-                    
-                    let to = URL(fileURLWithPath: "\(path)/\(libraryIdentifier)/\(headersPath)/lib\(library)/module.modulemap")
-                    
+
+                    let headerDirectory = library == "dav1d" ? "dav1d" : "lib\(library)"
+                    let to = URL(fileURLWithPath: "\(path)/\(libraryIdentifier)/\(headersPath)/\(headerDirectory)/module.modulemap")
+
                     try createDirectory(at: to.deletingLastPathComponent().path)
-                    
+
                     try removeItem(at: to.path)
-                    
+
                     do {
                         try copyItem(at: "ModuleMaps/\(library)/module.modulemap",
                                      to: to.path)
@@ -703,7 +821,7 @@ extension Tool {
                             print(#line, error)
                             throw error
                         }
-                        
+
                         let content = """
                             module \(library) {
                                 umbrella "."
@@ -716,17 +834,17 @@ extension Tool {
             }
         }
     }
-    
+
     struct Lipo: ParsableCommand {
         @Argument
         var input: String
-        
+
         @Option
         var arch: String
-        
+
         @Option
         var output: String
-        
+
         func run() throws {
             try launch(launchPath: "/usr/bin/lipo",
                        arguments: [
@@ -738,7 +856,7 @@ extension Tool {
                        ])
         }
     }
-    
+
     struct Clean: ParsableCommand {
         func run() throws {
             // FIXME: ...
@@ -749,15 +867,15 @@ extension Tool {
 func launch(launchPath: String, arguments: [String], currentDirectoryPath: String? = nil, environment: [String: String]? = nil) throws {
     #if os(macOS)
     let process = Process()
-    
+
     if #available(OSX 10.13, *) {
         process.executableURL = URL(fileURLWithPath: launchPath)
     } else {
         process.launchPath = launchPath
     }
-    
+
     process.arguments = arguments
-    
+
     currentDirectoryPath.map { path in
         if #available(OSX 10.13, *) {
             process.currentDirectoryURL = URL(fileURLWithPath: path)
@@ -766,17 +884,17 @@ func launch(launchPath: String, arguments: [String], currentDirectoryPath: Strin
         }
         print("current directory:", path)
     }
-    
+
     environment.map { environment in
         // merge into the inherited environment so PATH etc. stay intact
         let merged = ProcessInfo.processInfo.environment.merging(environment) { $1 }
         process.environment = merged
         print("environment:", environment)
     }
-    
+
     print(launchPath, arguments)
     process.launch()
-    
+
     process.waitUntilExit()
     if process.terminationStatus != 0 {
         print("'\(launchPath)' exit code: \(process.terminationStatus)")
@@ -830,17 +948,17 @@ func spawn(_ args: [String]) throws {
     var pid: pid_t = -1
     var argv = args.map { strdup($0) }
     argv.append(nil)
-    
+
     print(#function, args)
     let errno = posix_spawnp(&pid, args.first, nil, nil, argv, environ)
     print(#function, "posix_spawn()=\(errno) pid=\(pid)")
-    
+
     argv.dropLast().forEach { free($0) }
-    
+
     guard errno == 0 else {
         throw ExitCode.failure
     }
-    
+
     var status: Int32 = 0
     let ret = waitpid(pid, &status, 0)
     print(#function, "waitpid()=\(ret) status=\(status)")
@@ -868,42 +986,42 @@ func host(_ arch: String) -> String {
 
 protocol Configuration {
     var options: [String] { get }
-    
+
     var environment: [String: String]? { get }
-    
+
     init(sourceDirectory: String, arch: String, platform: String?, deploymentTarget: String, installPrefix: String)
 }
 
 class ConfigurationHelper {
     let sourceDirectory: String
-    
+
     let arch: String
-    
+
     let platform: String
-    
+
     var sdk: String { platform.lowercased() }
-    
+
     var cc: String { "xcrun -sdk \(sdk) clang" }
-    
+
     var aarch64: String { arch == "arm64" ? "-arch aarch64" : "" }
-    
+
     var `as`: String { "\(sourceDirectory)/extras/gas-preprocessor.pl \(aarch64) -- \(cc)" }
-    
+
     var cFlags: String
-    
+
     var ldFlags: String { cFlags }
-    
+
     let installPrefix: String
-    
+
     var environment: [String: String]? { nil }
-    
+
     required init(sourceDirectory: String, arch: String, platform: String? = nil, deploymentTarget: String, installPrefix: String) {
         self.sourceDirectory = sourceDirectory
         self.arch = arch
         self.installPrefix = installPrefix
-    
+
         cFlags = "-arch \(arch)"
-        
+
         if let platform = platform {
             self.platform = platform
         } else {
@@ -954,7 +1072,7 @@ protocol Recipe {
 
 struct CompositeRecipe: Recipe {
     let recipes: [Recipe]
-    
+
     func run() throws {
         for recipe in recipes {
             try recipe.run()
@@ -964,11 +1082,11 @@ struct CompositeRecipe: Recipe {
 
 struct Shell: Recipe {
     let command: String
-    
+
     init(_ command: String) {
         self.command = command
     }
-    
+
     func run() throws {
         // FIXME: ...
         print(command)
@@ -983,7 +1101,7 @@ struct Shell: Recipe {
     static func buildBlock(_ partialResults: Recipe...) -> Recipe {
         CompositeRecipe(recipes: partialResults.map { $0 })
     }
-    
+
     static func buildOptional(_ content: Recipe?) -> Recipe {
         CompositeRecipe(recipes: [])
     }
