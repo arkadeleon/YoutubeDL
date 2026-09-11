@@ -57,6 +57,15 @@ struct DownloadView: View {
             guard let url = newValue else { return }
             urlString = url.absoluteString
         }
+        .sheet(item: $app.formatSelectionRequest) { request in
+            FormatSelectionView(request: request) {
+                app.cancelFormatSelection()
+            } onConfirm: { video, audio in
+                Task {
+                    await app.download(request, video: video, audio: audio)
+                }
+            }
+        }
         .alert(isPresented: $isShowingAlert) {
             Alert(title: Text(alertMessage ?? "no message?"))
         }
@@ -164,6 +173,8 @@ private struct DownloadStatusView: View {
             return String(localized: "Ready")
         case .extracting:
             return String(localized: "Extracting information…")
+        case .selectingFormat:
+            return String(localized: "Choosing a format…")
         case .downloading:
             return String(localized: "Downloading…")
         case .transcoding:

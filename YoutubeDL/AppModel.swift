@@ -38,6 +38,7 @@ typealias TimeRange = Range<TimeInterval>
 enum DownloadState: Equatable {
     case idle
     case extracting
+    case selectingFormat
     case downloading
     case transcoding
     case completed(URL)
@@ -45,12 +46,21 @@ enum DownloadState: Equatable {
 
     var isBusy: Bool {
         switch self {
-        case .extracting, .downloading, .transcoding:
+        case .extracting, .selectingFormat, .downloading, .transcoding:
             return true
         case .idle, .completed, .failed:
             return false
         }
     }
+}
+
+/// A URL whose formats have been extracted and that is waiting for the user to
+/// pick the ones to download.
+struct FormatSelectionRequest: Identifiable {
+    let url: URL
+    let info: MediaInfo
+
+    var id: URL { url }
 }
 
 struct DownloadProgress: Equatable {
@@ -121,6 +131,8 @@ class AppModel: ObservableObject {
 
     @Published var downloadProgress: DownloadProgress = .empty
 
+    @Published var formatSelectionRequest: FormatSelectionRequest?
+
     private var progress = Progress()
 
     @Published var hasYouTubeCookies = YouTubeCookieStore.hasStoredCookies
@@ -147,6 +159,8 @@ class AppModel: ObservableObject {
         }
     }
 
+    /// Resolve the URL and ask the user which formats to download. The download
+    /// itself only starts once ``download(_:video:audio:)`` is called back.
     func startDownload(url: URL) async {
         guard !downloadState.isBusy else {
             return
@@ -157,7 +171,30 @@ class AppModel: ObservableObject {
         downloadState = .extracting
 
         do {
-            let outputURL = try await download(url: url)
+            let info = try await extractInfo(url: url)
+            formatSelectionRequest = FormatSelectionRequest(url: url, info: info)
+            downloadState = .selectingFormat
+        } catch {
+            failDownload(with: error)
+        }
+    }
+
+    func cancelFormatSelection() {
+        formatSelectionRequest = nil
+        downloadState = .idle
+    }
+
+    func download(_ request: FormatSelectionRequest, video: MediaFormat?, audio: MediaFormat?) async {
+        formatSelectionRequest = nil
+        downloadProgress = .empty
+        // yt-dlp resolves the URL again before it starts downloading.
+        downloadState = .extracting
+
+        do {
+            let outputURL = try await download(
+                url: request.url,
+                formatSpec: formatSpec(video: video, audio: audio)
+            )
 
             do {
                 try refreshDownloads()
@@ -168,23 +205,53 @@ class AppModel: ObservableObject {
             downloadProgress = .empty
             downloadState = .completed(outputURL)
             notify(body: String(localized: "Download complete"))
-        } catch YoutubeDLError.canceled {
-            print(#function, "canceled")
-            downloadProgress = .empty
-            downloadState = .idle
-        } catch is CancellationError {
-            print(#function, "canceled")
-            downloadProgress = .empty
-            downloadState = .idle
-        } catch PythonError.exception(let exception, traceback: _) {
-            print(#function, exception)
-            downloadProgress = .empty
-            downloadState = .failed(exception.description)
         } catch {
-            print(#function, error)
-            downloadProgress = .empty
-            downloadState = .failed(error.localizedDescription)
+            failDownload(with: error)
         }
+    }
+
+    private func failDownload(with error: Error) {
+        downloadProgress = .empty
+
+        if error is CancellationError {
+            print(#function, "canceled")
+            downloadState = .idle
+            return
+        }
+
+        if let error = error as? YoutubeDLError {
+            switch error {
+            case .canceled:
+                print(#function, "canceled")
+                downloadState = .idle
+            case .noPythonModule:
+                downloadState = .failed(String(localized: "yt-dlp is not installed yet."))
+            case .noMediaInfo:
+                downloadState = .failed(noFormatsMessage)
+            }
+            return
+        }
+
+        if let error = error as? PythonError,
+           case .exception(let exception, traceback: _) = error {
+            print(#function, exception)
+            downloadState = .failed(exception.description)
+            return
+        }
+
+        print(#function, error)
+        downloadState = .failed(error.localizedDescription)
+    }
+
+    /// Turn the picked formats into a yt-dlp format selector. A video format
+    /// that already carries an audio track is downloaded as it is; otherwise
+    /// the two picks are merged.
+    private func formatSpec(video: MediaFormat?, audio: MediaFormat?) -> String {
+        let ids = [
+            video?.id,
+            video?.hasAudio == true ? nil : audio?.id,
+        ]
+        return ids.compactMap { $0 }.joined(separator: "+")
     }
 
     func refreshDownloads() throws {
@@ -278,20 +345,51 @@ class AppModel: ObservableObject {
 
     }
 
-    func download(url: URL) async throws -> URL {
-        progress = Progress()
-        progress.localizedDescription = NSLocalizedString("Extracting info", comment: "progress description")
+    private var noFormatsMessage: String {
+        String(localized: "No downloadable formats were found for this URL.")
+    }
 
-        var argv: [String] = [
-            "-f", "bestvideo[vcodec!^=vp9][vcodec!^=av01]+bestaudio/bestvideo+bestaudio/best",
-            "--recode-video", "mov",
-            "--postprocessor-args", "VideoConvertor+ffmpeg:-c:v h264 -c:a aac",
-            "-o", "%(title).200B.%(ext)s", // https://github.com/yt-dlp/yt-dlp/issues/1136#issuecomment-932077195
+    /// Options that both extraction and download need. The format picker only
+    /// makes sense for a single video, hence `--no-playlist`.
+    private var commonArguments: [String] {
+        var argv = [
+            "--no-playlist",
             "--no-check-certificates",
         ]
         if let cookieFileURL = YouTubeCookieStore.existingFileURL {
             argv.append(contentsOf: ["--cookies", cookieFileURL.path])
         }
+        return argv
+    }
+
+    func extractInfo(url: URL) async throws -> MediaInfo {
+        progress = Progress()
+        progress.localizedDescription = NSLocalizedString("Extracting info", comment: "progress description")
+
+        let argv = commonArguments + [url.absoluteString]
+        print(#function, argv)
+
+        let info = try await yt_dlp_extractInfo(argv: argv) { level, message in
+            print("extractInfo", level, message)
+        }
+
+        guard !info.formats.isEmpty else {
+            throw YoutubeDLError.noMediaInfo
+        }
+
+        return info
+    }
+
+    func download(url: URL, formatSpec: String) async throws -> URL {
+        progress = Progress()
+
+        var argv: [String] = [
+            "-f", formatSpec,
+            "--recode-video", "mov",
+            "--postprocessor-args", "VideoConvertor+ffmpeg:-c:v h264 -c:a aac",
+            "-o", "%(title).200B.%(ext)s", // https://github.com/yt-dlp/yt-dlp/issues/1136#issuecomment-932077195
+        ]
+        argv.append(contentsOf: commonArguments)
         argv.append(url.absoluteString)
         print(#function, argv)
         let (events, eventContinuation) = AsyncStream.makeStream(of: YtDlpEvent.self)

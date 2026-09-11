@@ -154,6 +154,7 @@ public let defaultOptions: PythonObject = [
 public enum YoutubeDLError: Error {
     case noPythonModule
     case canceled
+    case noMediaInfo
 }
 
 open class YoutubeDL: NSObject {
