@@ -25,11 +25,12 @@ let package = Package(
         .binaryTarget(name: "swscale", path: "Frameworks/swscale.xcframework"),
         .binaryTarget(name: "swresample", path: "Frameworks/swresample.xcframework"),
         .binaryTarget(name: "fftools", path: "Frameworks/fftools.xcframework"),
+        .binaryTarget(name: "dav1d", path: "Frameworks/dav1d.xcframework"),
         .binaryTarget(name: "mp3lame", path: "Frameworks/mp3lame.xcframework"),
         .target(name: "Dummy", dependencies: [
             "fftools",
             "avcodec", "avformat", "avfilter", "avdevice", "avutil", "swscale", "swresample",
-            "mp3lame",
+            "dav1d", "mp3lame",
             "FFmpeg-iOS-Support",
         ]),
         .testTarget(name: "FFmpeg-iOSTests",
