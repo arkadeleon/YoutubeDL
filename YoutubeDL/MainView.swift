@@ -32,7 +32,6 @@ struct MainView: View {
             NavigationView {
                 DownloadView()
                     .navigationTitle("Download")
-                    .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
                 Label("Download", systemImage: "arrow.down.to.line")
@@ -41,7 +40,6 @@ struct MainView: View {
             NavigationView {
                 LibraryView()
                     .navigationTitle("Library")
-                    .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
                 Label("Library", systemImage: "photo.fill.on.rectangle.fill")
@@ -50,7 +48,6 @@ struct MainView: View {
             NavigationView {
                 SettingsView(isIdleTimerDisabled: $isIdleTimerDisabled)
                     .navigationTitle("Settings")
-                    .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
                 Label("Settings", systemImage: "gear")

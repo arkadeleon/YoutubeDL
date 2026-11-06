@@ -30,4 +30,6 @@ extern int HookFFprobeCapture(int, char**, char**, char**);
 
 extern void HookFreeCString(char *);
 
+extern const char *av_version_info(void);
+
 #endif /* Hook_h */

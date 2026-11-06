@@ -3,6 +3,7 @@
 //  YoutubeDL
 //
 
+import FFmpegSupport
 import SwiftUI
 import YoutubeDL
 
@@ -52,6 +53,17 @@ struct SettingsView: View {
                     }
                 }
                 .disabled(isLoadingVersion || isUpdating || app.downloadState.isBusy)
+            }
+
+            Section("FFmpeg") {
+                HStack {
+                    Text("Version")
+
+                    Spacer()
+
+                    Text(ffmpegVersion())
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("YouTube Authentication") {

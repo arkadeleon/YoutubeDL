@@ -35,6 +35,10 @@ public func ffprobe(_ args: [String]) -> Int {
     run(tool: HookFFprobe, args: args)
 }
 
+public func ffmpegVersion() -> String {
+    String(cString: av_version_info())
+}
+
 public func ffmpegCapture(_ args: [String]) -> (Int, String?, String?) {
     runCapture(tool: HookFFmpegCapture, args: args)
 }
