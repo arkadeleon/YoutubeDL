@@ -31,8 +31,6 @@ let trace = "trace"
 
 @UIApplicationMain
 class AppDelegate: NSObject, UIApplicationDelegate {
-    var window: UIWindow?
-   
     let model = AppModel()
     
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
@@ -46,30 +44,6 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         FileManager.default.changeCurrentDirectoryPath(documentsDirectory.path)
         
         UNUserNotificationCenter.current().delegate = self
-        
-        let view = MainView()
-            .environmentObject(model)
-        window?.rootViewController = UIHostingController(rootView: view)
-        
-        return true
-    }
-    
-    func applicationDidEnterBackground(_ application: UIApplication) {
-//        if Downloader.shared.transcoder != nil {
-//            notify(body: NSLocalizedString("TranscodingStoppedMessage", comment: "Notification body"))
-//        }
-    }
-    
-    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return false
-        }
-        components.scheme = "https"
-        guard let url = components.url else {
-            return false
-        }
-        
-        model.url = url
         
         return true
     }
